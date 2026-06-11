@@ -57,7 +57,7 @@ const LOOP_ERASE_KEEP: f32 = 0.72;
 pub struct EngineParams {
     /// Record-to-repro delay in seconds (maps to motor speed).
     pub delay_time: f32,
-    /// Echo regeneration, 0..1.1 (>1 runs away into tape limiting).
+    /// Echo regeneration, 0..1.5 (>1 runs away into tape limiting).
     pub feedback: f32,
     /// Gain into tape — drives the magnetics. 1.0 = unity.
     pub tape_in: f32,
@@ -900,6 +900,42 @@ mod tests {
             peak_late > 0.05,
             "runaway died out: peak {peak_late:.4} (feedback >1 should self-oscillate)"
         );
+    }
+
+    #[test]
+    fn full_feedback_runaway_is_violent_but_bounded() {
+        // 150% loop gain: runaway must get LOUD fast (within a few repeats),
+        // slam into the tape ceiling, and never blow past the safety clamp.
+        let mut e = engine_48k();
+        e.set_params(&EngineParams {
+            delay_time: 0.25,
+            feedback: 1.5,
+            dry_level: 0.0,
+            tape_level: 1.0,
+            condition: 0.0,
+            noise_amount: 1.0,
+            ..Default::default()
+        });
+        for _ in 0..24_000 {
+            e.process(0.0, 0.0);
+        }
+        let mut sum_sq = 0.0f64;
+        let mut peak = 0.0f32;
+        for k in 0..(4 * 48_000) {
+            let x = if k < 100 { 0.8 } else { 0.0 };
+            let (y, _) = e.process(x, x);
+            assert!(y.is_finite(), "non-finite output at sample {k}");
+            peak = peak.max(y.abs());
+            if k >= 3 * 48_000 {
+                sum_sq += (y as f64) * (y as f64);
+            }
+        }
+        let rms_db = 10.0 * (sum_sq / 48_000.0).log10();
+        assert!(
+            rms_db > -12.0,
+            "max feedback should reach the tape ceiling within ~3 s: {rms_db:.1} dB"
+        );
+        assert!(peak < 4.0, "runaway escaped the clamp: peak {peak:.2}");
     }
 
     #[test]

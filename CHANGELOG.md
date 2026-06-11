@@ -1,5 +1,25 @@
 # Changelog
 
+## Unreleased
+
+- **FDBK now reaches 150%.** The old 110% ceiling left the loop gain barely
+  over unity, so runaway crept up over many seconds instead of taking off.
+  At 150% (~3.5 dB of excess gain) it blooms within a couple of repeats,
+  slams into the tape and stays there — properly unhinged, still bounded by
+  the tape itself. Note for existing sessions: saved knob *values* load
+  unchanged, but normalized automation curves of FDBK written against
+  earlier versions will read ~36% lower (the range grew); re-scale them if
+  a track relied on them.
+- **Interface scaling.** SETUP gained an INTERFACE SCALE selector:
+  50–200% of the native 1080×560 in six steps. The window resizes live
+  (host permitting) and the choice is saved with the plugin state.
+- **SETUP overlay re-laid on a strict three-column grid** — stocks |
+  budget + machine | aging + scale — with section headers on shared rows
+  and every group centered on its column.
+- The website's download button now serves the *versioned* archive
+  (`RE-DEEMER-x.y.z-macos.zip`) so downloads identify their version; the
+  stable link remains for old bookmarks.
+
 ## 1.0.2 — 2026-06-11
 
 - **Alignment & symmetry pass:** the 1-8 buttons and transport row are

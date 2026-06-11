@@ -140,7 +140,7 @@
   <p class="hero-cap">THE SPOOLS ARE REAL: TAPE FOOTAGE WINDS LEFT TO RIGHT OVER A 30-MINUTE SIDE, AND REWIND WINDS IT BACK.</p>
 
   <div class="buttons">
-    <a class="btn btn-dl" href="https://github.com/naturarum/re-deemer/releases/latest/download/RE-DEEMER-macos.zip">⬇&nbsp;&nbsp;DOWNLOAD FREE — macOS</a>
+    <a class="btn btn-dl" id="dl-btn" href="https://github.com/naturarum/re-deemer/releases/latest/download/RE-DEEMER-macos.zip">⬇&nbsp;&nbsp;DOWNLOAD FREE — macOS</a>
     <a class="btn btn-tip" href="https://paypal.me/naturarerum">♥&nbsp;&nbsp;TIP JAR</a>
   </div>
   <p class="relmeta"><b id="rel-tag">latest release</b> · notarized · universal (Apple silicon + Intel)</p>
@@ -204,10 +204,17 @@
 </footer>
 
 <script>
-  // Version badge under the download button; harmless if it fails.
+  // Version badge + point the button at the VERSIONED asset, so the file
+  // people download carries its version in the name (and the per-asset
+  // download counts on GitHub split by version). Falls back to the stable
+  // asset link if the API is unreachable.
   fetch("https://api.github.com/repos/naturarum/re-deemer/releases/latest")
     .then(r => r.json())
-    .then(d => { if (d.tag_name) document.getElementById("rel-tag").textContent = d.tag_name; })
+    .then(d => {
+      if (d.tag_name) document.getElementById("rel-tag").textContent = d.tag_name;
+      const versioned = (d.assets || []).find(a => /RE-DEEMER-\d[\d.]*-macos\.zip/.test(a.name));
+      if (versioned) document.getElementById("dl-btn").href = versioned.browser_download_url;
+    })
     .catch(() => {});
 </script>
 

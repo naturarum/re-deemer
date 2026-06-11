@@ -82,7 +82,7 @@ Things that matter about this topology:
 | Control | What it does |
 | --- | --- |
 | **TIME** | Delay time = tape speed (60 ms – 1.5 s). Changing it repitches everything already on tape. |
-| **FDBK** | Echo regeneration, 0–110%. Over 100% = self-oscillating runaway, tape-limited. |
+| **FDBK** | Echo regeneration, 0–150%. Past 100% the loop gain genuinely exceeds unity: runaway blooms within a couple of repeats and the tape — not a limiter — does the limiting. |
 | **TP LVL** | Tape (echo) level at the output. |
 | **DRY LVL** | Dry signal level. |
 | **OUT DRV** | Op-amp drive on the final mix. |
@@ -123,6 +123,8 @@ up once, not perform with.
 | **NOISE** | Tape hiss level (recorded onto the tape). |
 | **MECH** | Mechanism condition: wow, flutter, dropouts, bias sag. 0 = serviced, full = thrift-store wreck. |
 | **ECO / STD / ULT** | Oversampling quality of the tape magnetics (2× / 4× / 8×). |
+| **MIDI** | Lets MIDI notes C3–G3 select and gate positions (off by default so a routed keyboard doesn't move the sequencer). |
+| **INTERFACE SCALE** | Resizes the whole interface: 50 / 75 / 100 / 125 / 150 / 200% of the native 1080×560. The window resizes with it (host permitting) and the choice is saved with the plugin state. |
 
 ---
 

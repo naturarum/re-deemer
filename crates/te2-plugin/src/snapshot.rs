@@ -31,7 +31,10 @@ fn main() {
     let out = std::env::args()
         .nth(1)
         .unwrap_or_else(|| "te2-panel.png".to_string());
-    let overlay = std::env::args().nth(2).is_some_and(|a| a == "overlay");
+    let overlay = std::env::args().any(|a| a == "overlay");
+    let scale = std::env::args()
+        .find_map(|a| a.strip_prefix("scale=").and_then(|s| s.parse::<f32>().ok()))
+        .unwrap_or(1.0);
 
     let params = Arc::new(Te2Params::default());
     let shared = Arc::new(UiShared::default());
@@ -41,9 +44,10 @@ fn main() {
         // Give the wear bar something to show.
         params.tape_age.store(0.37, std::sync::atomic::Ordering::Relaxed);
     }
+    params.ui_scale.store(scale, std::sync::atomic::Ordering::Relaxed);
 
     let mut harness = egui_kittest::Harness::builder()
-        .with_size(egui::vec2(1080.0, 560.0))
+        .with_size(egui::vec2(1080.0 * scale, 560.0 * scale))
         .build_ui(move |ui| {
             let setter = ParamSetter::new(&*context);
             te2_plugin::ui::draw_for_snapshot(ui, &setter, &params, &shared, 0.7, overlay);

@@ -395,6 +395,11 @@ pub struct Te2Params {
     #[persist = "age"]
     pub tape_age: Arc<AtomicF32>,
 
+    /// Editor scale factor (0.5..2.0), from the SETUP overlay. The window
+    /// resizes to 1080x560 times this; the canvas scales with it.
+    #[persist = "ui-scale"]
+    pub ui_scale: Arc<AtomicF32>,
+
     /// Editor window state.
     #[persist = "egui-state"]
     pub editor_state: Arc<EguiState>,
@@ -464,10 +469,13 @@ impl Default for Te2Params {
             .with_unit(" s")
             .with_value_to_string(formatters::v2s_f32_rounded(3)),
 
+            // Past 100% the loop gain genuinely exceeds unity and the tape
+            // does the limiting. 150% is ~3.5 dB of excess gain — runaway
+            // blooms in a couple of repeats instead of creeping up.
             feedback: FloatParam::new(
                 "Feedback",
                 0.45,
-                FloatRange::Linear { min: 0.0, max: 1.1 },
+                FloatRange::Linear { min: 0.0, max: 1.5 },
             )
             .with_value_to_string(formatters::v2s_f32_percentage(1))
             .with_string_to_value(formatters::s2v_f32_percentage()),
@@ -667,6 +675,7 @@ impl Default for Te2Params {
             aging_on: BoolParam::new("Tape Aging", true),
             aging_freeze: BoolParam::new("Freeze Aging", false),
             tape_age: Arc::new(AtomicF32::new(0.0)),
+            ui_scale: Arc::new(AtomicF32::new(1.0)),
 
             editor_state: EguiState::from_size(1080, 560),
         }

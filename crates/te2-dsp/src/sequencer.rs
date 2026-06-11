@@ -190,11 +190,11 @@ pub fn unmap_mod_spd_hz(v: f32) -> f32 {
 }
 
 pub fn map_feedback(u: f32) -> f32 {
-    u.clamp(0.0, 1.0) * 1.1
+    u.clamp(0.0, 1.0) * 1.5
 }
 
 pub fn unmap_feedback(v: f32) -> f32 {
-    (v / 1.1).clamp(0.0, 1.0)
+    (v / 1.5).clamp(0.0, 1.0)
 }
 
 pub fn map_level(u: f32) -> f32 {

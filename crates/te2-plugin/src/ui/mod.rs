@@ -16,12 +16,21 @@ use nice_plug_egui::{EguiSettings, create_egui_editor};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
+/// The fixed logical canvas everything is drawn in. UI scaling resizes the
+/// window and scales the layer; coordinates in this file never change.
+const CANVAS: egui::Vec2 = egui::Vec2::new(1080.0, 560.0);
+
+/// The scale steps offered in SETUP.
+pub const UI_SCALES: [f32; 6] = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
+
 struct EditorState {
     /// Reel/capstan rotation, integrated from the live motor speed and the
     /// current pack radii (the engine supplies footage; the radii follow).
     anim: cassette::ReelAnim,
     /// The TAPE & MACHINE overlay (opened from the RE-2 logo / SETUP button).
     settings_open: bool,
+    /// Scale we last asked the host to size the window for.
+    applied_scale: f32,
 }
 
 pub fn create(params: Arc<Te2Params>, shared: Arc<UiShared>) -> Option<Box<dyn Editor>> {
@@ -30,6 +39,7 @@ pub fn create(params: Arc<Te2Params>, shared: Arc<UiShared>) -> Option<Box<dyn E
         EditorState {
             anim: cassette::ReelAnim::default(),
             settings_open: false,
+            applied_scale: 0.0,
         },
         EguiSettings::default(),
         |_ctx, _queue, _state| {},
@@ -57,10 +67,14 @@ pub fn draw_for_snapshot(
             angle_cap: reel_angle * 9.6,
         },
         settings_open,
+        applied_scale: 0.0,
     };
     draw_panel(ui, setter, params, shared, &mut state);
 }
 
+/// Scale plumbing: the panel is drawn into its own Area whose layer carries
+/// a scale transform, and the window is resized to CANVAS x scale. Every
+/// coordinate below stays in the fixed 1080x560 canvas space.
 fn draw_panel(
     ui: &mut egui::Ui,
     setter: &nice_plug::prelude::ParamSetter,
@@ -68,11 +82,46 @@ fn draw_panel(
     shared: &UiShared,
     state: &mut EditorState,
 ) {
+    let scale = params.ui_scale.load(Ordering::Relaxed).clamp(0.5, 2.0);
+    if (state.applied_scale - scale).abs() > 1e-3 {
+        let want = (
+            (CANVAS.x * scale).round() as u32,
+            (CANVAS.y * scale).round() as u32,
+        );
+        if params.editor_state.size() != want {
+            params.editor_state.set_requested_size(want);
+        }
+        state.applied_scale = scale;
+    }
+
+    let ctx = ui.ctx().clone();
+    let panel_id = egui::Id::new("te2-panel");
+    ctx.set_transform_layer(
+        egui::LayerId::new(egui::Order::Middle, panel_id),
+        egui::emath::TSTransform::from_scaling(scale),
+    );
+    egui::Area::new(panel_id)
+        .order(egui::Order::Middle)
+        .fixed_pos(pos2(0.0, 0.0))
+        .show(&ctx, |ui| {
+            draw_panel_inner(ui, setter, params, shared, state, scale);
+        });
+}
+
+fn draw_panel_inner(
+    ui: &mut egui::Ui,
+    setter: &nice_plug::prelude::ParamSetter,
+    params: &Te2Params,
+    shared: &UiShared,
+    state: &mut EditorState,
+    scale: f32,
+) {
     let dt = ui.input(|i| i.stable_dt).min(0.1);
     let speed = shared.speed.load(Ordering::Relaxed);
     let footage = shared.footage.load(Ordering::Relaxed);
 
-    let full = ui.max_rect();
+    let full = Rect::from_min_size(pos2(0.0, 0.0), CANVAS);
+    ui.allocate_rect(full, Sense::hover());
     let painter = ui.painter().clone();
 
     // Wood frame + faceplate. The grain is a handful of deterministic
@@ -751,30 +800,40 @@ fn draw_panel(
     );
 
     if state.settings_open {
-        draw_settings_overlay(ui, setter, params, shared, state);
+        draw_settings_overlay(ui, setter, params, shared, state, scale);
     }
 }
 
-/// The TAPE & MACHINE overlay: a modal card over a dimmed faceplate.
-/// Hosts the tape stock drawer, the aging controls, and the setup trims
-/// that used to crowd the panel (NOISE / MECH / quality).
+
+/// The TAPE & MACHINE overlay: a modal card over a dimmed faceplate, laid
+/// out on a strict three-column grid (stocks | stocks + machine | aging +
+/// scale), every group centered on its column.
 fn draw_settings_overlay(
     ui: &mut egui::Ui,
     setter: &nice_plug::prelude::ParamSetter,
     params: &Te2Params,
     shared: &UiShared,
     state: &mut EditorState,
+    scale: f32,
 ) {
     use crate::params::{TapeStockParam, TapeType};
     use te2_dsp::tape::TapeKind;
 
-    let full = ui.max_rect();
+    let full = Rect::from_min_size(pos2(0.0, 0.0), CANVAS);
     let mut close = ui.input(|i| i.key_pressed(egui::Key::Escape));
 
-    egui::Area::new(egui::Id::new("te2-settings-overlay"))
+    // The overlay layer scales with the panel.
+    let overlay_id = egui::Id::new("te2-settings-overlay");
+    let ctx = ui.ctx().clone();
+    ctx.set_transform_layer(
+        egui::LayerId::new(egui::Order::Foreground, overlay_id),
+        egui::emath::TSTransform::from_scaling(scale),
+    );
+
+    egui::Area::new(overlay_id)
         .order(egui::Order::Foreground)
         .fixed_pos(pos2(0.0, 0.0))
-        .show(ui.ctx(), |ui| {
+        .show(&ctx, |ui| {
             // Scrim: dims the faceplate, swallows its input, closes on click.
             let scrim = ui.allocate_rect(full, Sense::click());
             ui.painter()
@@ -784,7 +843,7 @@ fn draw_settings_overlay(
             }
 
             // The card. Allocated so clicks in its gaps don't reach the scrim.
-            let card = Rect::from_min_max(pos2(170.0, 64.0), pos2(910.0, 496.0));
+            let card = Rect::from_min_max(pos2(170.0, 70.0), pos2(910.0, 490.0));
             ui.allocate_rect(card, Sense::click());
             let p = ui.painter();
             p.rect_filled(card, 6.0, Color32::from_rgb(0x17, 0x17, 0x18));
@@ -795,7 +854,7 @@ fn draw_settings_overlay(
                 StrokeKind::Inside,
             );
             p.text(
-                pos2(card.left() + 22.0, card.top() + 24.0),
+                pos2(194.0, 94.0),
                 Align2::LEFT_CENTER,
                 "TAPE  &  MACHINE",
                 FontId::monospace(15.0),
@@ -803,14 +862,13 @@ fn draw_settings_overlay(
             );
 
             // Close button.
-            let x_rect = Rect::from_center_size(pos2(card.right() - 24.0, card.top() + 24.0), vec2(20.0, 20.0));
+            let x_rect = Rect::from_center_size(pos2(886.0, 94.0), vec2(20.0, 20.0));
             let x_resp = ui.allocate_rect(x_rect, Sense::click());
             let x_color = if x_resp.hovered() { theme::INK } else { theme::INK_DIM };
             let c = x_rect.center();
-            let r = 4.5;
             for (a, b) in [
-                (c + vec2(-r, -r), c + vec2(r, r)),
-                (c + vec2(-r, r), c + vec2(r, -r)),
+                (c + vec2(-4.5, -4.5), c + vec2(4.5, 4.5)),
+                (c + vec2(-4.5, 4.5), c + vec2(4.5, -4.5)),
             ] {
                 ui.painter().line_segment([a, b], Stroke::new(1.6, x_color));
             }
@@ -818,10 +876,12 @@ fn draw_settings_overlay(
                 close = true;
             }
 
-            // --- Stock drawer (left + middle columns) ---
-            let group = |ui: &mut egui::Ui, title: &str, x: f32, y: f32| {
-                widgets::label(ui, pos2(x + 106.0, y), title, 9.0, theme::INK_DIM);
+            // --- Three columns, 212 wide: A 194, B 426, C 658. Midlines
+            // 300 / 532 / 764. Section headers share rows: y=124 and y=296.
+            let header = |ui: &mut egui::Ui, mid: f32, y: f32, title: &str| {
+                widgets::label(ui, pos2(mid, y), title, 9.0, theme::INK_DIM);
             };
+
             let selected = params.tape_stock.value();
             let stock_row = |ui: &mut egui::Ui, x: f32, y: f32, stock: TapeStockParam| {
                 let rect = Rect::from_min_size(pos2(x, y), vec2(212.0, 20.0));
@@ -880,9 +940,8 @@ fn draw_settings_overlay(
                 ));
             };
 
-            let col_a = 192.0;
-            let col_b = 424.0;
-            group(ui, "PREMIUM  ·  ~1 H TO WORN", col_a, 64.0 + 54.0);
+            // --- Column A: premium + standard stocks ---
+            header(ui, 300.0, 124.0, "PREMIUM  ·  ~1 H TO WORN");
             for (i, s) in [
                 TapeStockParam::MaxellXlii,
                 TapeStockParam::TdkSa,
@@ -894,9 +953,9 @@ fn draw_settings_overlay(
             .into_iter()
             .enumerate()
             {
-                stock_row(ui, col_a, 64.0 + 66.0 + i as f32 * 24.0, s);
+                stock_row(ui, 194.0, 136.0 + i as f32 * 24.0, s);
             }
-            group(ui, "STANDARD  ·  ~40 MIN", col_a, 64.0 + 226.0);
+            header(ui, 300.0, 296.0, "STANDARD  ·  ~40 MIN");
             for (i, s) in [
                 TapeStockParam::TdkAd,
                 TapeStockParam::MaxellUdii,
@@ -905,9 +964,11 @@ fn draw_settings_overlay(
             .into_iter()
             .enumerate()
             {
-                stock_row(ui, col_a, 64.0 + 238.0 + i as f32 * 24.0, s);
+                stock_row(ui, 194.0, 308.0 + i as f32 * 24.0, s);
             }
-            group(ui, "BUDGET  ·  ~20 MIN", col_b, 64.0 + 54.0);
+
+            // --- Column B: budget stocks + machine trims ---
+            header(ui, 532.0, 124.0, "BUDGET  ·  ~20 MIN");
             for (i, s) in [
                 TapeStockParam::TdkD,
                 TapeStockParam::SonyHf,
@@ -918,17 +979,56 @@ fn draw_settings_overlay(
             .into_iter()
             .enumerate()
             {
-                stock_row(ui, col_b, 64.0 + 66.0 + i as f32 * 24.0, s);
+                stock_row(ui, 426.0, 136.0 + i as f32 * 24.0, s);
             }
+            header(ui, 532.0, 296.0, "MACHINE");
+            widgets::knob(
+                ui,
+                setter,
+                &params.noise,
+                pos2(492.0, 346.0),
+                17.0,
+                "NOISE",
+                "Tape hiss level. The noise is recorded onto the tape, so it \
+                 regenerates through the feedback loop like real hiss.",
+            );
+            widgets::knob(
+                ui,
+                setter,
+                &params.mech,
+                pos2(572.0, 346.0),
+                17.0,
+                "MECH",
+                "Mechanism condition: wow, flutter, dropouts and bias sag. \
+                 0 = freshly serviced, full = thrift-store wreck.",
+            );
+            widgets::switch3(
+                ui,
+                setter,
+                &params.quality,
+                pos2(490.0, 424.0),
+                ["ECO", "STD", "ULT"],
+                "Oversampling for the tape magnetics: 2x / 4x / 8x.",
+            );
+            widgets::toggle_button(
+                ui,
+                setter,
+                &params.midi_enable,
+                Rect::from_center_size(pos2(578.0, 424.0), vec2(36.0, 16.0)),
+                "MIDI",
+                Some(theme::LED_GREEN),
+                "Let MIDI notes C3-G3 select and gate positions. Off by \
+                 default so a keyboard routed to the track doesn't move the \
+                 sequencer.",
+            );
 
-            // --- Aging (right column) ---
-            let col_c = 668.0;
-            widgets::label(ui, pos2(col_c + 105.0, 118.0), "TAPE AGING", 9.0, theme::INK_DIM);
+            // --- Column C: aging + interface scale ---
+            header(ui, 764.0, 124.0, "TAPE AGING");
             widgets::toggle_button(
                 ui,
                 setter,
                 &params.aging_on,
-                Rect::from_center_size(pos2(col_c + 24.0, 142.0), vec2(40.0, 18.0)),
+                Rect::from_center_size(pos2(736.0, 152.0), vec2(40.0, 18.0)),
                 "AGING",
                 Some(theme::LED_YELLOW),
                 "Tape wears while the transport rolls: more wow, dropouts and \
@@ -938,22 +1038,22 @@ fn draw_settings_overlay(
                 ui,
                 setter,
                 &params.aging_freeze,
-                Rect::from_center_size(pos2(col_c + 86.0, 142.0), vec2(44.0, 18.0)),
+                Rect::from_center_size(pos2(792.0, 152.0), vec2(44.0, 18.0)),
                 "FREEZE",
                 Some(theme::LED_GREEN),
                 "Hold the wear exactly where it is — keep a worn character \
                  without it getting worse.",
             );
 
-            // Wear bar.
             let age = params.tape_age.load(Ordering::Relaxed).clamp(0.0, 1.0);
             let aging_on = params.aging_on.value();
-            let bar = Rect::from_min_max(pos2(col_c, 178.0), pos2(col_c + 210.0, 190.0));
+            let bar = Rect::from_min_max(pos2(664.0, 186.0), pos2(864.0, 198.0));
             let bar_resp = ui.allocate_rect(bar, Sense::hover());
             let p = ui.painter();
             p.rect_filled(bar, 3.0, theme::FADER_TRACK);
             if age > 0.0 {
-                let fill = Rect::from_min_max(bar.min, pos2(bar.left() + bar.width() * age, bar.bottom()));
+                let fill =
+                    Rect::from_min_max(bar.min, pos2(bar.left() + bar.width() * age, bar.bottom()));
                 let color = if aging_on {
                     Color32::from_rgb(0xB8, 0x86, 0x38)
                 } else {
@@ -964,10 +1064,11 @@ fn draw_settings_overlay(
             p.rect_stroke(bar, 3.0, Stroke::new(0.8, theme::PANEL_EDGE), StrokeKind::Outside);
             let profile = params.tape_stock.value().to_dsp().profile();
             ui.painter().text(
-                pos2(col_c, 200.0),
-                Align2::LEFT_CENTER,
+                pos2(764.0, 214.0),
+                Align2::CENTER_CENTER,
                 format!(
-                    "WEAR {:>3.0}%{}", age * 100.0,
+                    "WEAR {:>3.0}%{}",
+                    age * 100.0,
                     if aging_on { "" } else { "  · BYPASSED" }
                 ),
                 FontId::monospace(8.5),
@@ -980,11 +1081,9 @@ fn draw_settings_overlay(
                 profile.aging_seconds / 60.0,
             ));
 
-            // New cassette: wipes the tape and the wear (same as STP/EJ
-            // double-press on the faceplate).
             let fresh = widgets::action_button(
                 ui,
-                Rect::from_center_size(pos2(col_c + 52.0, 228.0), vec2(104.0, 20.0)),
+                Rect::from_center_size(pos2(764.0, 246.0), vec2(110.0, 20.0)),
                 "NEW CASSETTE",
                 false,
                 None,
@@ -995,46 +1094,46 @@ fn draw_settings_overlay(
                 shared.eject.store(true, Ordering::Relaxed);
             }
 
-            // --- Machine trims (right column, lower) ---
-            widgets::label(ui, pos2(col_c + 105.0, 296.0), "MACHINE", 9.0, theme::INK_DIM);
-            widgets::knob(
+            header(ui, 764.0, 296.0, "INTERFACE SCALE");
+            for (i, s) in UI_SCALES.into_iter().enumerate() {
+                let chip = Rect::from_center_size(
+                    pos2(679.0 + i as f32 * 34.0, 322.0),
+                    vec2(30.0, 18.0),
+                );
+                let resp = ui.allocate_rect(chip, Sense::click());
+                let is_sel = (scale - s).abs() < 1e-3;
+                let p = ui.painter();
+                let bg = if is_sel {
+                    theme::KNOB_EDGE
+                } else if resp.hovered() {
+                    Color32::from_rgb(0x24, 0x24, 0x26)
+                } else {
+                    theme::KNOB_BODY
+                };
+                p.rect_filled(chip, 3.0, bg);
+                p.rect_stroke(chip, 3.0, Stroke::new(0.8, theme::PANEL_EDGE), StrokeKind::Outside);
+                p.text(
+                    chip.center(),
+                    Align2::CENTER_CENTER,
+                    format!("{:.0}", s * 100.0),
+                    FontId::monospace(7.5),
+                    if is_sel { theme::INK } else { theme::INK_DIM },
+                );
+                if resp.clicked() {
+                    params.ui_scale.store(s, Ordering::Relaxed);
+                }
+                resp.on_hover_text(format!(
+                    "Scale the interface to {:.0}% — the window resizes with it \
+                     (host permitting). Saved with the plugin state.",
+                    s * 100.0
+                ));
+            }
+            widgets::label(
                 ui,
-                setter,
-                &params.noise,
-                pos2(col_c + 30.0, 336.0),
-                17.0,
-                "NOISE",
-                "Tape hiss level. The noise is recorded onto the tape, so it \
-                 regenerates through the feedback loop like real hiss.",
-            );
-            widgets::knob(
-                ui,
-                setter,
-                &params.mech,
-                pos2(col_c + 106.0, 336.0),
-                17.0,
-                "MECH",
-                "Mechanism condition: wow, flutter, dropouts and bias sag. \
-                 0 = freshly serviced, full = thrift-store wreck.",
-            );
-            widgets::switch3(
-                ui,
-                setter,
-                &params.quality,
-                pos2(col_c + 40.0, 412.0),
-                ["ECO", "STD", "ULT"],
-                "Oversampling for the tape magnetics: 2x / 4x / 8x.",
-            );
-            widgets::toggle_button(
-                ui,
-                setter,
-                &params.midi_enable,
-                Rect::from_center_size(pos2(col_c + 140.0, 412.0), vec2(36.0, 16.0)),
-                "MIDI",
-                Some(theme::LED_GREEN),
-                "Let MIDI notes C3-G3 select and gate positions. Off by \
-                 default so a keyboard routed to the track doesn't move the \
-                 sequencer.",
+                pos2(764.0, 348.0),
+                "%  OF  1080 × 560",
+                7.5,
+                theme::INK_DIM,
             );
 
             // Footer hint.
