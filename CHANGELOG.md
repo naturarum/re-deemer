@@ -1,5 +1,72 @@
 # Changelog
 
+## 1.0.1 — 2026-06-11
+
+**If you use the AU in Logic or GarageBand, update: the v1.0.0 download's
+AU never registered with macOS** (details below). Plus tape stocks, tape
+aging, a settings overlay, live spools, and a round of panel fixes.
+
+- **Live spools.** The cassette animation now runs on real tape motion from
+  the engine: the supply pack winds onto the take-up over a C60 side
+  (30 minutes at nominal speed), pack radii follow tape-area conservation,
+  and each reel's spin rate tracks its current radius — the supply reel
+  audibly-fast as it runs low. RW winds it backwards, MTR stalls it, the
+  side ping-pongs at the end like an auto-reverse deck, and eject drops in
+  a fully-wound fresh cassette. The shell picked up a clear hub window,
+  ruled label with side-A marker, and shell screws.
+- **Deck type vs. cassette type, reconciled.** The faceplate NM/CH/MT switch
+  is the *deck's* tape-type setting; the stock in SETUP is the *cassette*.
+  Picking a stock sets the deck to match; setting them apart is a usable
+  mis-set-deck effect, flagged by a small amber tell-tale next to the
+  switch. New instances now default to CH to match the default Maxell XL-II
+  (existing sessions keep their saved value).
+- **Layout fixes** from testing: the fader matrix spans the full panel
+  width; the 1-8 cycle-length selector joined the top row beside CYCLE; the
+  MIDI switch moved off the faceplate into TAPE & MACHINE.
+- **Panel redesign.** The cassette window is much larger (and everything in
+  it scales properly), the 1-8 position buttons moved below it, and the
+  transport buttons grew. Faders got a third more throw (96 px) for finer
+  mouse control. The three DRIFT knobs now wear their set's cap color
+  (white/gray/black) so they can be told apart. The right-hand block sits on
+  two rows aligned with the main knob rows. The wordmark above the VU is now
+  RE-2, and third-party hardware branding was removed from the faceplate —
+  the cassette label simply shows the loaded stock.
+- **Tape stock**: fourteen real-world cassettes (Maxell XL-II default,
+  TDK SA/MA/AD/D, Sony Metal-ES/UX/HF, BASF Chrome Maxima, Nakamichi EX-II,
+  Maxell UD-II, Realistic Supertape, Memorex, no-name ferric) in three
+  grades setting base hiss, headroom, and how fast the tape wears.
+  Selecting a stock pre-sets the NM/CH/MT switch to its native formulation;
+  the cassette in the window is labelled with what's loaded.
+- **Tape aging**: the tape wears while the transport rolls — wow, dropouts
+  and hiss rise; top end, output and headroom fade. Premium stock takes
+  about an hour to go lo-fi, budget stock ~20 minutes. Wear is saved with
+  the project, FREEZE holds it, eject (or NEW CASSETTE) resets it, and the
+  AGING switch turns the whole thing off.
+- **TAPE & MACHINE overlay**: click the TE-2 logo (or the new SETUP button)
+  for the machine room — tape stock, aging, NOISE, MECH and quality, moved
+  off the faceplate.
+- **Cycle is now phase-locked to the DAW clock.** SYNC previously matched
+  only the step *rate* to the tempo, so the cycle drifted against the song.
+  With SYNC on and the transport rolling, steps now land on the grid and
+  follow loops, jumps and tempo changes; with the transport stopped the
+  cycle free-runs at the synced rate.
+- **Fixed: the RES-gate filter synth was silent with NOISE turned down.**
+  Self-oscillation was seeded only by tape hiss, so gating the filter open
+  produced nothing on a quiet machine. The OTA input stage now carries its
+  own thermal noise floor (≈−90 dB, inaudible) — the filter sings from true
+  silence, like the real circuit. Gate open/close also ramps over ~3 ms
+  instead of snapping (no clicks).
+- **Removed the GT/−10/+4 input switch.** It was a hardware
+  impedance/level-matching control and never affected the audio here —
+  TAPE IN is the input level. Old sessions load fine; the saved value is
+  ignored.
+- **Fixed: the Audio Unit registered on first build only.** An incremental
+  rebuild quietly stripped the component's AudioComponents registration, so
+  the AU shipped in the v1.0.0 zip never appears in Logic/GarageBand. The
+  build now restores the registration on every build and packaging refuses
+  to ship a component without it. (CLAP and VST3 were unaffected; the AU
+  loads the installed CLAP, so reinstalling fixes both.)
+
 ## 1.0.0 — 2026-06-11
 
 First release. The preorder, redeemed.

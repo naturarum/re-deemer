@@ -1,6 +1,6 @@
 # RE-DEEMER — User Manual
 
-**Cassette tape echo · v1.0.0 · macOS (VST3 / CLAP / AU) · free**
+**Cassette tape echo · v1.0.1 · macOS (VST3 / CLAP / AU) · free**
 
 RE-DEEMER is a software realization of the Space Case TE-2, a cassette-based
 tape echo instrument designed around 2018–2019 that was pre-ordered by many
@@ -28,15 +28,10 @@ run in Terminal), or copy by hand:
 **Important:** the AU is a thin wrapper that loads the CLAP — install the
 CLAP even if you only use Logic.
 
-**First launch on macOS:** this build is not notarized by Apple (it's a free
-plugin, not an App Store product). If your DAW refuses to load it, run the
-included `install.sh`, which clears the quarantine flag — or in Terminal:
-
-```
-xattr -dr com.apple.quarantine ~/Library/Audio/Plug-Ins/CLAP/RE-DEEMER.clap \
-    ~/Library/Audio/Plug-Ins/VST3/RE-DEEMER.vst3 \
-    ~/Library/Audio/Plug-Ins/Components/RE-DEEMER.component
-```
+Release builds are Developer ID signed and notarized by Apple, so macOS
+loads them without ceremony. If your DAW still refuses (e.g. a zip that
+went through an unusual download path), run the included `install.sh`,
+which also clears the quarantine flag.
 
 Then rescan plugins in your DAW. In Logic, the AU appears under
 **naturarum → RE-DEEMER** (MIDI-controlled effects).
@@ -99,24 +94,36 @@ Things that matter about this topology:
 
 | Control | What it does |
 | --- | --- |
-| **NM / CH / MT** | Tape formulation: I Normal (warm, saturates early), II Chrome (cleaner), IV Metal (most headroom). |
+| **NM / CH / MT** | The deck's tape-type setting (bias/EQ): I Normal (warm, saturates early), II Chrome (cleaner), IV Metal (most headroom). Picking a stock in SETUP sets it to that cassette's native type; moving it away is a mis-set deck — usable as an effect. The amber tell-tale beside it lights when deck and cassette disagree. |
 | **TAPE IN** | Record level into the tape. The VU reads this. |
 | **MTR** | Hold: the motor dies and pitch drags to a stop. Release: it winds back up. |
 | **ANMLY + (−/OFF/+)** | The Anomaly: one tape hiccup fired on the cycle's final step. Amount = quick blip → long wobble; polarity bends pitch down or up. |
-| **ECO / STD / ULT** | Oversampling quality of the tape magnetics (2× / 4× / 8×). |
-| **GT / −10 / +4** | Input level standard (guitar / consumer / pro). |
+| **SETUP** | Opens the TAPE & MACHINE overlay (so does clicking the RE-2 logo). |
 | **OUT** | Output trim. |
 
 ### Top row
 
 | Control | What it does |
 | --- | --- |
-| **DIV + SYNC** | Cycle rate division and host-tempo sync. |
+| **DIV + SYNC** | Cycle rate division and host-clock sync. With SYNC on, the step rate follows the DAW tempo and — while the transport rolls — the steps are phase-locked to the playhead, so the cycle lands on the grid and follows loops and jumps. |
 | **LOOP + SYNC** | Loop length for LOOP mode; SYNC snaps to beats. |
-| **NOISE** | Tape hiss level (recorded onto the tape). |
-| **MECH** | Mechanism condition: wow, flutter, dropouts, bias sag. 0 = serviced, full = thrift-store wreck. |
 | **DRIFT ×3** | Per-set glide time between positions, 0–14 s. |
 | **CYCLE + CYC** | Cycle speed (8 s/step → 4,000 steps/s) and run switch. |
+
+### TAPE & MACHINE overlay (click the RE-2 logo or SETUP)
+
+The machine room: everything about the cassette and the deck that you set
+up once, not perform with.
+
+| Control | What it does |
+| --- | --- |
+| **Tape stock** | Which cassette is in the well — fourteen real-world stocks in three grades. Premium (Maxell XL-II, TDK SA/MA, Sony Metal-ES, BASF Chrome Maxima, Nakamichi EX-II) is quiet, full of headroom, and takes about an hour of rolling to wear out. Standard (TDK AD, Maxell UD-II, Sony UX) sits in the middle. Budget (TDK D, Sony HF, Realistic Supertape, Memorex, no-name ferric) hisses more, saturates earlier, and is worn in ~20 minutes. Picking a stock also flips the NM/CH/MT switch to that tape's native formulation — you can still override it on the faceplate, like mis-setting a real deck. The cassette label in the window shows what's loaded. |
+| **AGING** | Tape wears while the transport rolls: wow, dropouts and hiss creep up; top end, output and headroom fade — exactly what a cassette loop does as the oxide sheds. Wear is **saved with your project** (it's physical wear on *this* tape) and shown on the wear bar. Off = the tape stays pristine forever. |
+| **FREEZE** | Pauses the wear clock where it is: keep a perfectly broken-in tape without it getting worse. |
+| **NEW CASSETTE** | Drops in a fresh tape: wipes the loop and resets wear (same as the STP/EJ double-press). |
+| **NOISE** | Tape hiss level (recorded onto the tape). |
+| **MECH** | Mechanism condition: wow, flutter, dropouts, bias sag. 0 = serviced, full = thrift-store wreck. |
+| **ECO / STD / ULT** | Oversampling quality of the tape magnetics (2× / 4× / 8×). |
 
 ---
 
@@ -174,8 +181,8 @@ sets off — run the cycle just to get a wobble every few seconds.
 
 ## 7. MIDI
 
-Enable the **MIDI** button (next to the 1-8 row; off by default) and notes
-**C3–G3 (60–67)** select positions 1–8 and act as gates:
+Enable the **MIDI** switch (in the TAPE & MACHINE overlay; off by default)
+and notes **C3–G3 (60–67)** select positions 1–8 and act as gates:
 
 - With **GATE** on and **RES** high, each note plays the self-oscillating
   filter at that position's LPF pitch — an 8-note synth through the echo.
@@ -211,7 +218,7 @@ Three quick ones:
 | Plugin won't load after download | macOS quarantine — run `install.sh` or the `xattr` command in §1. |
 | AU missing in Logic | The AU needs the CLAP installed too (it loads it at runtime). Install both, then restart Logic. |
 | Silence in PLAY mode | Nothing on the tape — record something in REC/ECHO first. |
-| Keyboard moves the 1-8 buttons | That's the MIDI switch — turn it off (it's off by default). |
+| Keyboard moves the 1-8 buttons | That's the MIDI switch in TAPE & MACHINE — turn it off (it's off by default). |
 | Echo gets darker each repeat | That's tape. Open LPF, raise tape quality (CH/MT), lower TAPE IN. |
 | Pitch warbles | MECH and/or MOD AMT — turn down for a serviced machine. |
 

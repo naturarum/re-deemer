@@ -1,10 +1,17 @@
 # Space Case TE-2 — Roadmap
 
-Post-1.0 features, in rough priority order. Nothing here is shipped yet.
+Post-1.0 features, in rough priority order.
+
+> **Done (June 2026, unreleased):** §1 tape aging, §2 tape stock selector,
+> §3 settings overlay — built as one feature ("TAPE & MACHINE"). Details
+> drifted slightly from the sketches below (the overlay opens from the TE-2
+> logo *and* a SETUP button; standard-grade stocks were added; UI scale and
+> motor-ramp trims never existed as params so they're not in the overlay).
+> The sections are kept for the original reasoning.
 
 ---
 
-## 1. Tape aging (settings overlay)
+## 1. Tape aging (settings overlay) — DONE
 
 Tape wears as it runs. The longer the transport rolls, the more the sound
 degrades toward lo-fi — exactly what a real cassette loop does as the oxide
@@ -49,7 +56,7 @@ measured in *transport-running* time:
 
 ---
 
-## 2. Tape stock selector (settings overlay)
+## 2. Tape stock selector (settings overlay) — DONE
 
 A new axis distinct from the faceplate NM/CH/MT switch (which is IEC
 *formulation*: I Normal / II Chrome / IV Metal). "Stock" is the *brand-grade*
@@ -82,7 +89,7 @@ pre-sets the NM/CH/MT switch (overridable on the faceplate).
 
 ---
 
-## 3. Settings overlay panel
+## 3. Settings overlay panel — DONE
 
 A panel that **overlays the main interface** (dim the faceplate behind it,
 draw a centered card) rather than living on the faceplate. Opened by clicking

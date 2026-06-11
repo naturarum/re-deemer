@@ -1,24 +1,27 @@
-# Builds and publishes the macOS release archive when you push a version tag:
+# Fallback CI build of the macOS release archive (UNSIGNED — the real flow
+# is local: package.sh + notarize.sh, see README-RELEASING.md).
 #
-#   git tag v1.0.1 && git push origin v1.0.1
-#
-# The archive is attached to the GitHub Release under the *stable* name
+# The archive is attached as a DRAFT release under the *stable* name
 # RE-DEEMER-macos.zip, so the website's
 # .../releases/latest/download/RE-DEEMER-macos.zip link always serves the
-# newest version with zero site edits.
+# newest version with zero site edits once published.
 
 name: release
-# Manual trigger: the primary flow is local (signed + notarized, see
-# README-RELEASING.md). Run this from the Actions tab if you ever need an
-# unsigned CI build (e.g. testing the pipeline).
+# Manual trigger only. (The v1.0.0 tag-push run failed at the upload step
+# for lack of the permission below — fortunately, since it would have
+# replaced the notarized assets with unsigned ones.)
 on:
   workflow_dispatch:
+
+# Required for action-gh-release to create/update a draft release.
+permissions:
+  contents: write
 
 jobs:
   macos:
     runs-on: macos-14
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Rust toolchain
         run: |
