@@ -1,0 +1,9 @@
+[package]
+name = "te2-render"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+te2-dsp = { path = "../te2-dsp" }
+hound = "3.5"

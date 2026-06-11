@@ -1,0 +1,36 @@
+# Builds and publishes the macOS release archive when you push a version tag:
+#
+#   git tag v1.0.1 && git push origin v1.0.1
+#
+# The archive is attached to the GitHub Release under the *stable* name
+# RE-DEEMER-macos.zip, so the website's
+# .../releases/latest/download/RE-DEEMER-macos.zip link always serves the
+# newest version with zero site edits.
+
+name: release
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  macos:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup target add x86_64-apple-darwin
+
+      - name: Package
+        run: ./scripts/package.sh
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/RE-DEEMER-macos.zip
+            dist/RE-DEEMER-*-macos.zip
+          body_path: CHANGELOG.md
+          draft: true # review the draft, then click publish

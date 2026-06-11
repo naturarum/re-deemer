@@ -1,0 +1,10 @@
+[package]
+name = "te2-dsp"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+
+[dev-dependencies]
+hound = "3.5"

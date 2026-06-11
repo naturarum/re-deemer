@@ -1,0 +1,114 @@
+<!doctype html>
+<!--
+  RE-DEEMER site — single static file, no build step.
+  TWO PLACEHOLDERS to fill in before publishing:
+    1. GITHUB:  replace "YOURNAME/re-deemer" (2 places) with your repo.
+    2. PAYPAL:  replace "YOUR-PAYPAL-HANDLE" with your paypal.me handle.
+  Host on GitHub Pages: Settings -> Pages -> deploy from /site (or /docs).
+  The download button points at the *latest* release asset, so new releases
+  need zero edits here.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RE-DEEMER — free cassette tape echo (VST3 / CLAP / AU)</title>
+<meta name="description" content="RE-DEEMER is a free cassette tape echo plugin for macOS — a physical model of the Space Case TE-2 that never shipped. VST3, CLAP, AU.">
+<style>
+  :root {
+    --wood: #c8a878; --panel: #121213; --panel-edge: #2a2a2c;
+    --ink: #d8d4cc; --ink-dim: #8a8882; --red: #e83020; --cream: #e9dfc0;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #0b0b0c; color: var(--ink);
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    line-height: 1.6;
+  }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 0 24px; }
+  header { padding: 72px 0 32px; text-align: center; }
+  h1 { font-size: 56px; letter-spacing: 4px; }
+  h1 .dash { color: var(--red); }
+  .tag { color: var(--ink-dim); margin-top: 8px; font-size: 15px; }
+  .tag em { color: var(--cream); font-style: normal; }
+  .hero { margin: 40px 0; border: 6px solid var(--wood); border-radius: 6px;
+          box-shadow: 0 24px 80px rgba(0,0,0,.6); }
+  .hero img { width: 100%; display: block; }
+  .buttons { display: flex; gap: 16px; justify-content: center; flex-wrap: wrap; margin: 32px 0; }
+  .btn {
+    display: inline-block; padding: 14px 28px; border-radius: 4px;
+    text-decoration: none; font-size: 15px; letter-spacing: 1px;
+    border: 1px solid var(--panel-edge); transition: transform .1s;
+  }
+  .btn:hover { transform: translateY(-1px); }
+  .btn-dl { background: var(--red); color: #fff; border-color: #a02016; }
+  .btn-tip { background: var(--panel); color: var(--cream); }
+  .free { text-align: center; color: var(--ink-dim); font-size: 13px; max-width: 560px; margin: 0 auto 48px; }
+  section { border-top: 1px solid var(--panel-edge); padding: 48px 0; }
+  h2 { font-size: 18px; letter-spacing: 2px; color: var(--cream); margin-bottom: 20px; text-transform: uppercase; }
+  p + p { margin-top: 12px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 20px; margin-top: 24px; }
+  .cell { background: var(--panel); border: 1px solid var(--panel-edge); border-radius: 6px; padding: 18px; }
+  .cell h3 { font-size: 13px; color: var(--cream); letter-spacing: 1px; margin-bottom: 8px; }
+  .cell p { font-size: 13px; color: var(--ink-dim); }
+  ul { list-style: none; }
+  li { padding-left: 18px; position: relative; margin: 6px 0; font-size: 14px; }
+  li::before { content: "▸"; position: absolute; left: 0; color: var(--red); }
+  code { background: var(--panel); border: 1px solid var(--panel-edge);
+         padding: 1px 6px; border-radius: 3px; font-size: 13px; }
+  a { color: var(--cream); }
+  footer { border-top: 1px solid var(--panel-edge); padding: 40px 0 64px;
+           text-align: center; color: var(--ink-dim); font-size: 12px; }
+  @media (max-width: 600px) { h1 { font-size: 36px; } }
+</style>
+</head>
+<body>
+
+<header class="wrap">
+  <h1>RE<span class="dash">-</span>DEEMER</h1>
+  <p class="tag">cassette tape echo · <em>the preorder, redeemed</em> · VST3 / CLAP / AU · macOS · free</p>
+
+  <div class="hero"><img src="panel.png" alt="The RE-DEEMER panel: cassette window, VU meter, 21-fader position matrix, transport buttons"></div>
+
+  <div class="buttons">
+    <a class="btn btn-dl" href="https://github.com/YOURNAME/re-deemer/releases/latest/download/RE-DEEMER-macos.zip">⬇&nbsp;&nbsp;DOWNLOAD FREE — macOS</a>
+    <a class="btn btn-tip" href="https://paypal.me/YOUR-PAYPAL-HANDLE">♥&nbsp;&nbsp;TIP JAR</a>
+  </div>
+  <p class="free">RE-DEEMER is free, forever. People waited years for this machine — they deserve to get it for nothing. If it earns a place in your music, the tip jar keeps the tape rolling.</p>
+</header>
+
+<section class="wrap">
+  <h2>The story</h2>
+  <p>Around 2018, a cassette tape echo instrument called the Space Case TE-2 was announced: a real cassette transport, a position sequencer played like a keyboard, self-oscillating Roland-style filters, an Anomaly switch that made the tape hiccup on purpose. People pre-ordered. It never shipped.</p>
+  <p>RE-DEEMER is that machine, redeemed in software — built from the original reference guide and block diagram, as a physical model rather than a delay with tape flavoring. The motor has inertia. The tape has hysteresis. The hiss is recorded onto the tape and echoes with your signal.</p>
+</section>
+
+<section class="wrap">
+  <h2>What it does</h2>
+  <div class="grid">
+    <div class="cell"><h3>REAL TAPE PHYSICS</h3><p>Magnetic hysteresis (Jiles-Atherton), motor inertia, wow &amp; flutter at calibrated cassette figures, head bump, self-erasure. TIME is motor speed: turning it bends the pitch of everything on tape.</p></div>
+    <div class="cell"><h3>POSITIONS &amp; SETS</h3><p>Eight positions, three fader sets, played from buttons or MIDI. The Cycle sequences them from 8 seconds per step to 4,000 steps per second — at audio rate your faders become a waveform.</p></div>
+    <div class="cell"><h3>SELF-OSC FILTERS</h3><p>24 dB/oct OTA highpass and lowpass inside the echo loop. Resonance to clean self-oscillation — gate it from the 1-8 buttons and play the filter like an 8-note synth.</p></div>
+    <div class="cell"><h3>A REAL TRANSPORT</h3><p>PLAY mode manipulates the tape without recording. LOOP lifts the erase head for sound-on-sound layering. RW/FF shuttle. MTR kills the motor and the pitch dies with it. Double-tap eject for a fresh cassette.</p></div>
+    <div class="cell"><h3>THE ANOMALY</h3><p>One deliberate tape hiccup, fired on the cycle's last step — a quick flick or a long singular wobble, pitch bending up or down. A broken machine, on demand.</p></div>
+    <div class="cell"><h3>FEEDBACK PAST 100%</h3><p>Runaway feedback is bounded by tape saturation itself, not a limiter. It blooms, compresses, and stays musical while you play TIME and the filters.</p></div>
+  </div>
+</section>
+
+<section class="wrap">
+  <h2>Get it</h2>
+  <ul>
+    <li><a href="https://github.com/YOURNAME/re-deemer/releases/latest/download/RE-DEEMER-macos.zip">Download for macOS</a> — universal (Apple silicon + Intel), VST3 + CLAP + AU in one archive with the manual</li>
+    <li>Unzip, run <code>install.sh</code> (copies the plugins and clears macOS quarantine), rescan in your DAW</li>
+    <li>Read the <a href="https://github.com/YOURNAME/re-deemer/blob/main/MANUAL.md">manual</a> — or skim the recipes and just turn knobs</li>
+    <li>Requirements: macOS 10.13+, any DAW that hosts VST3, CLAP, or Audio Units</li>
+  </ul>
+</section>
+
+<footer>
+  <p>A tribute to the Space Case TE-2 (Moto Modular / Catskill Analog). Not affiliated.</p>
+  <p style="margin-top:6px">Free &amp; open source · <a href="https://github.com/YOURNAME/re-deemer">source on GitHub</a> · you waited long enough.</p>
+</footer>
+
+</body>
+</html>

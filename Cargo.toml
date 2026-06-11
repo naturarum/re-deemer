@@ -1,0 +1,31 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/te2-dsp",
+    "crates/te2-render",
+    "crates/te2-plugin",
+    "xtask",
+]
+
+[workspace.package]
+version = "1.0.0"
+edition = "2021"
+license = "ISC"
+authors = ["naturarum"]
+
+# Vendored baseview with a fix for an infinite-recursion crash in its macOS
+# `hitTest:`/event super-dispatch: under host KVO subclassing (e.g. Bitwig
+# observing the embedded view) the upstream code derives the super class from
+# the runtime leaf, which re-enters itself and overflows the stack on the first
+# pointer event. See vendor/baseview/src/macos/view.rs.
+[patch.crates-io]
+baseview = { path = "vendor/baseview" }
+
+[profile.release]
+lto = "thin"
+strip = "symbols"
+codegen-units = 1
+
+# Plugins must never abort on panic in a host
+[profile.release.package."*"]
+opt-level = 3
