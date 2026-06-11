@@ -16,6 +16,8 @@ pub struct UiShared {
     pub vu: AtomicF32,
     pub speed: AtomicF32,
     pub position: AtomicU8,
+    /// Signed seconds of tape past the heads (spool animation source).
+    pub footage: AtomicF32,
     /// STP/EJ double-press: swap in a fresh cassette.
     pub eject: AtomicBool,
     /// A 1-8 panel button is held (RES gate).
@@ -28,6 +30,7 @@ impl Default for UiShared {
             vu: AtomicF32::new(0.0),
             speed: AtomicF32::new(1.0),
             position: AtomicU8::new(1),
+            footage: AtomicF32::new(0.0),
             eject: AtomicBool::new(false),
             ui_gate: AtomicBool::new(false),
         }
@@ -43,6 +46,9 @@ pub struct SpaceCaseTe2 {
     midi_position: Option<u8>,
     /// Notes currently held (for RES gating); lowest-numbered wins position.
     held_notes: u32,
+    /// Last tape-wear value we wrote into the persisted field. When the
+    /// field no longer matches (state load), the engine gets re-seeded.
+    age_written: f32,
 }
 
 impl Default for SpaceCaseTe2 {
@@ -53,6 +59,7 @@ impl Default for SpaceCaseTe2 {
             ui_shared: Arc::new(UiShared::default()),
             midi_position: None,
             held_notes: 0,
+            age_written: -1.0,
         }
     }
 }
@@ -156,22 +163,42 @@ impl Plugin for SpaceCaseTe2 {
             return ProcessStatus::Error("plugin not initialized");
         };
 
-        // Cycle rate: free-running or synced to the host tempo.
-        let cycle_rate = if self.params.rate_sync.value() {
+        // Tape wear lives in the engine; the persisted field mirrors it.
+        // If the field changed under us (project/preset load), re-seed the
+        // engine; otherwise the engine value is authoritative.
+        let persisted_age = self.params.tape_age.load(std::sync::atomic::Ordering::Relaxed);
+        if persisted_age != self.age_written {
+            engine.set_age(persisted_age);
+        }
+
+        // Cycle rate: free-running or synced to the host tempo. When synced
+        // and the transport is rolling, the cycle is also phase-locked to
+        // the playhead so steps land on the DAW grid (and survive loops,
+        // jumps and tempo changes).
+        let beats_per_step = match self.params.rate_div.value() {
+            params::RateDivision::Whole => 4.0,
+            params::RateDivision::Half => 2.0,
+            params::RateDivision::Quarter => 1.0,
+            params::RateDivision::QuarterTriplet => 2.0 / 3.0,
+            params::RateDivision::Eighth => 0.5,
+            params::RateDivision::EighthTriplet => 1.0 / 3.0,
+            params::RateDivision::Sixteenth => 0.25,
+            params::RateDivision::ThirtySecond => 0.125,
+        };
+        let rate_synced = self.params.rate_sync.value();
+        let cycle_rate = if rate_synced {
             let tempo = context.transport().tempo.unwrap_or(120.0) as f32;
-            let beats_per_step = match self.params.rate_div.value() {
-                params::RateDivision::Whole => 4.0,
-                params::RateDivision::Half => 2.0,
-                params::RateDivision::Quarter => 1.0,
-                params::RateDivision::QuarterTriplet => 2.0 / 3.0,
-                params::RateDivision::Eighth => 0.5,
-                params::RateDivision::EighthTriplet => 1.0 / 3.0,
-                params::RateDivision::Sixteenth => 0.25,
-                params::RateDivision::ThirtySecond => 0.125,
-            };
             (tempo / 60.0 / beats_per_step).clamp(0.05, 4_000.0)
         } else {
             self.params.cycle_rate.value()
+        };
+        let host_step_pos = if rate_synced && context.transport().playing {
+            context
+                .transport()
+                .pos_beats()
+                .map(|beats| beats / beats_per_step as f64)
+        } else {
+            None
         };
 
         let fader = |p: &FloatParam| p.value();
@@ -203,6 +230,7 @@ impl Plugin for SpaceCaseTe2 {
             cycle_run: self.params.cycle_run.value(),
             cycle_len: self.params.cycle_len.value() as u8,
             cycle_rate,
+            host_step_pos,
             manual_position: self
                 .midi_position
                 .unwrap_or(self.params.position.value() as u8),
@@ -230,8 +258,8 @@ impl Plugin for SpaceCaseTe2 {
             hpf_hz: self.params.hpf.value(),
             lpf_hz: self.params.lpf.value(),
             res: self.params.res.value(),
-            // With the gate switch on, the 1-8 buttons gate the resonance;
-            // until the sequencer lands (phase 5) the gate is simply open.
+            // RES gating happens in the engine via res_gate_enabled +
+            // gate_held; this is a separate hard kill we never use.
             res_active: true,
             out_drive: self.params.out_drive.value(),
             tape_kind: match self.params.tape_type.value() {
@@ -246,6 +274,9 @@ impl Plugin for SpaceCaseTe2 {
             },
             condition: self.params.mech.value(),
             noise_amount: self.params.noise.value(),
+            stock: self.params.tape_stock.value().to_dsp(),
+            aging_on: self.params.aging_on.value(),
+            aging_freeze: self.params.aging_freeze.value(),
             seq,
             res_gate_enabled: self.params.res_gate.value(),
             gate_held: self.held_notes != 0
@@ -292,6 +323,14 @@ impl Plugin for SpaceCaseTe2 {
             }
         }
 
+        // Mirror the engine's wear back into the persisted field (also what
+        // the editor's wear bar reads).
+        let age_now = engine.age();
+        self.params
+            .tape_age
+            .store(age_now, std::sync::atomic::Ordering::Relaxed);
+        self.age_written = age_now;
+
         // Feed the editor: meter, reel speed, position LEDs.
         if self.params.editor_state.is_open() {
             self.ui_shared
@@ -303,6 +342,9 @@ impl Plugin for SpaceCaseTe2 {
             self.ui_shared
                 .position
                 .store(engine.current_position(), Ordering::Relaxed);
+            self.ui_shared
+                .footage
+                .store(engine.tape_footage_seconds() as f32, Ordering::Relaxed);
         }
 
         // The tape keeps making sound (noise, feedback tails) after input stops.

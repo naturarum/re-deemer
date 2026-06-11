@@ -79,17 +79,74 @@ pub enum TapeType {
     Metal,
 }
 
+/// Brand-grade of the cassette in the well — a separate axis from the IEC
+/// NM/CH/MT formulation switch. Sets aging rate, base hiss, and headroom.
 #[derive(Enum, PartialEq, Clone, Copy)]
-pub enum InputCharacter {
-    #[id = "guitar"]
-    #[name = "GT (Guitar)"]
-    Guitar,
-    #[id = "line10"]
-    #[name = "-10 dBV"]
-    LineMinus10,
-    #[id = "line4"]
-    #[name = "+4 dBu"]
-    LinePlus4,
+pub enum TapeStockParam {
+    #[id = "xlii"]
+    #[name = "Maxell XL-II"]
+    MaxellXlii,
+    #[id = "sa"]
+    #[name = "TDK SA"]
+    TdkSa,
+    #[id = "ma"]
+    #[name = "TDK MA"]
+    TdkMa,
+    #[id = "mes"]
+    #[name = "Sony Metal-ES"]
+    SonyMetalEs,
+    #[id = "bcm"]
+    #[name = "BASF Chrome Maxima"]
+    BasfChromeMaxima,
+    #[id = "exii"]
+    #[name = "Nakamichi EX-II"]
+    NakamichiExii,
+    #[id = "ad"]
+    #[name = "TDK AD"]
+    TdkAd,
+    #[id = "udii"]
+    #[name = "Maxell UD-II"]
+    MaxellUdii,
+    #[id = "ux"]
+    #[name = "Sony UX"]
+    SonyUx,
+    #[id = "d"]
+    #[name = "TDK D"]
+    TdkD,
+    #[id = "hf"]
+    #[name = "Sony HF"]
+    SonyHf,
+    #[id = "rst"]
+    #[name = "Realistic Supertape"]
+    RealisticSupertape,
+    #[id = "mrx"]
+    #[name = "Memorex"]
+    Memorex,
+    #[id = "gen"]
+    #[name = "No-Name Ferric"]
+    Generic,
+}
+
+impl TapeStockParam {
+    pub fn to_dsp(self) -> te2_dsp::tape::TapeStock {
+        use te2_dsp::tape::TapeStock as S;
+        match self {
+            TapeStockParam::MaxellXlii => S::MaxellXlii,
+            TapeStockParam::TdkSa => S::TdkSa,
+            TapeStockParam::TdkMa => S::TdkMa,
+            TapeStockParam::SonyMetalEs => S::SonyMetalEs,
+            TapeStockParam::BasfChromeMaxima => S::BasfChromeMaxima,
+            TapeStockParam::NakamichiExii => S::NakamichiExii,
+            TapeStockParam::TdkAd => S::TdkAd,
+            TapeStockParam::MaxellUdii => S::MaxellUdii,
+            TapeStockParam::SonyUx => S::SonyUx,
+            TapeStockParam::TdkD => S::TdkD,
+            TapeStockParam::SonyHf => S::SonyHf,
+            TapeStockParam::RealisticSupertape => S::RealisticSupertape,
+            TapeStockParam::Memorex => S::Memorex,
+            TapeStockParam::Generic => S::Generic,
+        }
+    }
 }
 
 #[derive(Enum, PartialEq, Clone, Copy)]
@@ -287,8 +344,9 @@ pub struct Te2Params {
     pub midi_enable: BoolParam,
     #[id = "ttype"]
     pub tape_type: EnumParam<TapeType>,
-    #[id = "inchr"]
-    pub input_char: EnumParam<InputCharacter>,
+    // "inchr" (input character GT/-10/+4) was removed: it was a hardware
+    // impedance/level-matching switch and never drove any DSP here — TAPE IN
+    // is the input level. The id stays retired; old sessions ignore it.
     #[id = "tmode"]
     pub transport_mode: EnumParam<TransportMode>,
     /// Momentary motor kill: pitch drags to a dead stop, ramps back on release.
@@ -320,6 +378,22 @@ pub struct Te2Params {
     /// Mechanism condition: 0 = serviced deck, 1 = thrift-store wreck.
     #[id = "mech"]
     pub mech: FloatParam,
+
+    // --- Tape stock & aging (settings overlay) ---
+    /// Which cassette is in the well (brand-grade; sets aging rate,
+    /// base hiss and headroom).
+    #[id = "stock"]
+    pub tape_stock: EnumParam<TapeStockParam>,
+    /// Tape aging master switch: off = pristine forever.
+    #[id = "aging"]
+    pub aging_on: BoolParam,
+    /// Freeze the wear clock at its current value.
+    #[id = "agfrz"]
+    pub aging_freeze: BoolParam,
+    /// Accumulated tape wear 0..1 — engine state, not a host parameter.
+    /// Persisted with the project: it's physical wear on *this* loop.
+    #[persist = "age"]
+    pub tape_age: Arc<AtomicF32>,
 
     /// Editor window state.
     #[persist = "egui-state"]
@@ -545,8 +619,10 @@ impl Default for Te2Params {
             anomaly_pol: EnumParam::new("Anomaly Polarity", AnomalyPolarity::Off),
             res_gate: BoolParam::new("Res Gate", false),
             midi_enable: BoolParam::new("MIDI Positions", false),
-            tape_type: EnumParam::new("Tape Type", TapeType::Normal),
-            input_char: EnumParam::new("Input", InputCharacter::LineMinus10),
+            // Chrome: matches the default stock (Maxell XL-II, Type II) so a
+            // fresh instance isn't born with a mis-set deck. Old sessions
+            // carry their own saved value.
+            tape_type: EnumParam::new("Tape Type", TapeType::Chrome),
             transport_mode: EnumParam::new("Transport", TransportMode::Echo),
             motor_kill: BoolParam::new("Motor", false),
             pause: BoolParam::new("Pause", false),
@@ -586,6 +662,11 @@ impl Default for Te2Params {
             mech: FloatParam::new("Mechanism", 0.35, FloatRange::Linear { min: 0.0, max: 1.0 })
                 .with_value_to_string(formatters::v2s_f32_percentage(0))
                 .with_string_to_value(formatters::s2v_f32_percentage()),
+
+            tape_stock: EnumParam::new("Tape Stock", TapeStockParam::MaxellXlii),
+            aging_on: BoolParam::new("Tape Aging", true),
+            aging_freeze: BoolParam::new("Freeze Aging", false),
+            tape_age: Arc::new(AtomicF32::new(0.0)),
 
             editor_state: EguiState::from_size(1080, 560),
         }

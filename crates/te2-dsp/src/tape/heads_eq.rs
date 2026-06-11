@@ -71,6 +71,9 @@ pub struct RecordEq {
     erase_env: OnePole,
     erase_env_coeff: f32,
     erase_lp: OnePole,
+
+    /// Tape wear 0..1: shed oxide self-erases sooner and harder.
+    wear: f32,
 }
 
 impl RecordEq {
@@ -82,9 +85,15 @@ impl RecordEq {
             erase_env: OnePole::default(),
             erase_env_coeff: OnePole::coeff(sample_rate, 25.0),
             erase_lp: OnePole::default(),
+            wear: 0.0,
         };
         eq.set_profile(profile);
         eq
+    }
+
+    /// Tape wear 0..1 (aging): lowers the self-erasure knee and cutoff.
+    pub fn set_wear(&mut self, wear: f32) {
+        self.wear = wear.clamp(0.0, 1.0);
     }
 
     pub fn set_profile(&mut self, profile: &EqProfile) {
@@ -107,9 +116,10 @@ impl RecordEq {
     pub fn post(&mut self, x: f32) -> f32 {
         let env = self.erase_env.lowpass(self.erase_env_coeff, x.abs());
         // Below the knee the filter sits out of band; above it the top end
-        // folds down toward ~5 kHz as the tape squashes.
-        let excess = (env - 0.55).max(0.0);
-        let fc = 20_000.0 / (1.0 + 6.0 * excess);
+        // folds down toward ~5 kHz as the tape squashes. Worn oxide starts
+        // erasing sooner and from a lower ceiling.
+        let excess = (env - (0.55 - 0.20 * self.wear)).max(0.0);
+        let fc = 20_000.0 * (1.0 - 0.55 * self.wear) / (1.0 + 6.0 * excess);
         let coeff = OnePole::coeff(self.sample_rate, fc);
         self.erase_lp.lowpass(coeff, x)
     }
@@ -126,6 +136,8 @@ impl RecordEq {
 pub struct ReproEq {
     sample_rate: f32,
     profile: EqProfile,
+    /// Gap-loss corner multiplier from tape wear (1.0 fresh, lower worn).
+    wear_gap_mul: f32,
 
     de_emph_coeffs: BiquadCoeffs,
     de_emph: Biquad,
@@ -142,6 +154,7 @@ impl ReproEq {
         let mut eq = Self {
             sample_rate,
             profile: *profile,
+            wear_gap_mul: 1.0,
             de_emph_coeffs: BiquadCoeffs::IDENTITY,
             de_emph: Biquad::default(),
             bump_coeffs: BiquadCoeffs::IDENTITY,
@@ -172,12 +185,19 @@ impl ReproEq {
         );
     }
 
+    /// Tape wear 0..1 (aging): the gap-loss corner falls as oxide sheds.
+    /// Takes effect on the next `set_speed` (control rate).
+    pub fn set_wear(&mut self, wear: f32) {
+        self.wear_gap_mul = 1.0 - 0.62 * wear.clamp(0.0, 1.0);
+    }
+
     /// Update the speed-tracking sections (call at control rate).
     pub fn set_speed(&mut self, speed: f32) {
         let speed = speed.abs().max(0.05);
         let bump_fc = (self.profile.bump_fc * speed).clamp(25.0, 400.0);
         self.bump_coeffs = BiquadCoeffs::peaking(self.sample_rate, bump_fc, 1.1, self.profile.bump_db);
-        let gap_fc = (self.profile.gap_fc * speed).clamp(1_200.0, 0.45 * self.sample_rate);
+        let gap_fc =
+            (self.profile.gap_fc * speed * self.wear_gap_mul).clamp(1_200.0, 0.45 * self.sample_rate);
         self.gap_coeffs = BiquadCoeffs::lowpass(self.sample_rate, gap_fc, 0.6);
     }
 

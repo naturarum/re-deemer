@@ -17,24 +17,26 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
 struct EditorState {
-    reel_angle: f32,
+    /// Reel/capstan rotation, integrated from the live motor speed and the
+    /// current pack radii (the engine supplies footage; the radii follow).
+    anim: cassette::ReelAnim,
+    /// The TAPE & MACHINE overlay (opened from the RE-2 logo / SETUP button).
+    settings_open: bool,
 }
 
 pub fn create(params: Arc<Te2Params>, shared: Arc<UiShared>) -> Option<Box<dyn Editor>> {
     create_egui_editor(
         params.editor_state.clone(),
-        EditorState { reel_angle: 0.0 },
+        EditorState {
+            anim: cassette::ReelAnim::default(),
+            settings_open: false,
+        },
         EguiSettings::default(),
         |_ctx, _queue, _state| {},
         move |ui, setter, _queue, state| {
-            let ctx = ui.ctx().clone();
             // The reels never stop turning.
-            ctx.request_repaint();
-            let dt = ui.input(|i| i.stable_dt).min(0.1);
-            let speed = shared.speed.load(Ordering::Relaxed);
-            state.reel_angle += speed * dt * 6.0;
-
-            draw_panel(ui, setter, &params, &shared, state.reel_angle);
+            ui.ctx().request_repaint();
+            draw_panel(ui, setter, &params, &shared, state);
         },
     )
 }
@@ -46,8 +48,17 @@ pub fn draw_for_snapshot(
     params: &Te2Params,
     shared: &UiShared,
     reel_angle: f32,
+    settings_open: bool,
 ) {
-    draw_panel(ui, setter, params, shared, reel_angle);
+    let mut state = EditorState {
+        anim: cassette::ReelAnim {
+            angle_l: reel_angle,
+            angle_r: reel_angle * 1.3 + 1.7,
+            angle_cap: reel_angle * 9.6,
+        },
+        settings_open,
+    };
+    draw_panel(ui, setter, params, shared, &mut state);
 }
 
 fn draw_panel(
@@ -55,9 +66,11 @@ fn draw_panel(
     setter: &nice_plug::prelude::ParamSetter,
     params: &Te2Params,
     shared: &UiShared,
-    reel_angle: f32,
+    state: &mut EditorState,
 ) {
+    let dt = ui.input(|i| i.stable_dt).min(0.1);
     let speed = shared.speed.load(Ordering::Relaxed);
+    let footage = shared.footage.load(Ordering::Relaxed);
 
     let full = ui.max_rect();
     let painter = ui.painter().clone();
@@ -79,16 +92,24 @@ fn draw_panel(
         StrokeKind::Inside,
     );
 
-    // Wordmarks.
+    // Wordmarks. The RE-2 logo doubles as the settings latch.
     painter.text(
         pos2(1000.0, 36.0),
         Align2::CENTER_CENTER,
-        "TE-2",
+        "RE-2",
         FontId::monospace(22.0),
         theme::INK,
     );
+    let logo = ui.allocate_rect(
+        Rect::from_center_size(pos2(1000.0, 35.0), vec2(76.0, 26.0)),
+        Sense::click(),
+    );
+    if logo.clicked() {
+        state.settings_open = !state.settings_open;
+    }
+    logo.on_hover_text("Tape stock, aging and machine setup.");
     painter.text(
-        pos2(208.0, 224.0),
+        pos2(224.0, 404.0),
         Align2::CENTER_CENTER,
         "RE-DEEMER",
         FontId::monospace(28.0),
@@ -96,11 +117,21 @@ fn draw_panel(
     );
 
     // Cassette window + VU, driven by the audio thread.
+    let stock_profile = params.tape_stock.value().to_dsp().profile();
+    let wear_eff = if params.aging_on.value() {
+        params.tape_age.load(Ordering::Relaxed)
+    } else {
+        0.0
+    };
     cassette::draw(
         ui,
-        Rect::from_min_max(pos2(36.0, 32.0), pos2(380.0, 196.0)),
-        reel_angle,
+        Rect::from_min_max(pos2(36.0, 32.0), pos2(412.0, 272.0)),
+        &mut state.anim,
+        dt,
         speed,
+        footage,
+        stock_profile.label,
+        wear_eff,
     );
     vu::draw(
         ui,
@@ -114,8 +145,8 @@ fn draw_panel(
     let mut any_held = false;
     for i in 0..8u8 {
         let cx = 56.0 + i as f32 * 42.0;
-        let center = pos2(cx, 282.0);
-        widgets::led(ui, pos2(cx, 258.0), position == i + 1, theme::LED_RED);
+        let center = pos2(cx, 324.0);
+        widgets::led(ui, pos2(cx, 298.0), position == i + 1, theme::LED_RED);
         let rect = Rect::from_center_size(center, vec2(28.0, 28.0));
         let response = ui.allocate_rect(rect, Sense::click_and_drag());
         if response.drag_started() || response.clicked() {
@@ -132,7 +163,7 @@ fn draw_panel(
         p.circle_filled(center, 13.0, theme::KNOB_BODY);
         p.circle_stroke(center, 13.0, Stroke::new(1.2, theme::KNOB_EDGE));
         p.text(
-            pos2(cx, 282.0 + 22.0),
+            pos2(cx, 324.0 + 24.0),
             Align2::CENTER_CENTER,
             format!("{}", i + 1),
             FontId::monospace(9.0),
@@ -141,21 +172,10 @@ fn draw_panel(
     }
     shared.ui_gate.store(any_held, Ordering::Relaxed);
 
-    widgets::toggle_button(
-        ui,
-        setter,
-        &params.midi_enable,
-        Rect::from_center_size(pos2(398.0, 278.0), vec2(32.0, 16.0)),
-        "MIDI",
-        Some(theme::LED_GREEN),
-        "Let MIDI notes C3-G3 select and gate positions. Off by default so a \
-         keyboard routed to the track doesn't move the sequencer.",
-    );
-
     // --- Transport row ---
-    let ty = 500.0;
-    let bsize = vec2(44.0, 26.0);
-    let bx = |i: f32| pos2(62.0 + i * 50.0, ty);
+    let ty = 474.0;
+    let bsize = vec2(52.0, 32.0);
+    let bx = |i: f32| pos2(64.0 + i * 56.0, ty);
     let transport = params.transport_mode.value();
 
     let stop_on = params.stop.value();
@@ -296,51 +316,34 @@ fn draw_panel(
         "Loop length for LOOP mode, in seconds of tape footage. \
          SYNC snaps it to whole beats.",
     );
-    widgets::knob(
-        ui,
-        setter,
-        &params.noise,
-        kx(2.0),
-        17.0,
-        "NOISE",
-        "Tape hiss level. The noise is recorded onto the tape, so it \
-         regenerates through the feedback loop like real hiss.",
-    );
-    widgets::knob(
-        ui,
-        setter,
-        &params.mech,
-        kx(3.0),
-        17.0,
-        "MECH",
-        "Mechanism condition: wow, flutter, dropouts and bias sag. \
-         0 = freshly serviced, full = thrift-store wreck.",
-    );
-    widgets::knob(
+    widgets::knob_capped(
         ui,
         setter,
         &params.white_drift,
-        kx(4.0),
+        kx(3.0),
         17.0,
         "DRIFT",
+        Some(theme::CAP_WHITE),
         "Glide time between positions for the White set (0-14 s).",
     );
-    widgets::knob(
+    widgets::knob_capped(
         ui,
         setter,
         &params.gray_drift,
-        kx(5.0),
+        kx(4.0),
         17.0,
         "DRIFT",
+        Some(theme::CAP_GRAY),
         "Glide time between positions for the Gray set (0-14 s).",
     );
-    widgets::knob(
+    widgets::knob_capped(
         ui,
         setter,
         &params.black_drift,
-        kx(6.0),
+        kx(5.0),
         17.0,
         "DRIFT",
+        Some(theme::CAP_BLACK),
         "Glide time between positions for the Black set (0-14 s).",
     );
     widgets::knob(
@@ -362,7 +365,8 @@ fn draw_panel(
         Rect::from_center_size(pos2(446.0, 112.0), small),
         "SYNC",
         Some(theme::LED_RED),
-        "Sync the cycle rate to the host tempo using DIV.",
+        "Lock the cycle to the host clock: rate from tempo and DIV, steps \
+         phase-locked to the playhead while the transport rolls.",
     );
     widgets::toggle_button(
         ui,
@@ -441,7 +445,7 @@ fn draw_panel(
         ui,
         setter,
         &params.cycle_len,
-        pos2(912.0, 170.0),
+        pos2(830.0, 66.0),
         18.0,
         8,
         "1-8",
@@ -454,14 +458,14 @@ fn draw_panel(
     let grays = params.gray_faders();
     let blacks = params.black_faders();
     for col in 0..7usize {
-        let cx = 462.0 + col as f32 * 66.0;
-        widgets::label(ui, pos2(cx, 200.0), &format!("{}", col + 2), 9.5, theme::INK);
+        let cx = 462.0 + col as f32 * 90.0;
+        widgets::label(ui, pos2(cx, 198.0), &format!("{}", col + 2), 9.5, theme::INK);
         widgets::fader(
             ui,
             setter,
             whites[col],
-            pos2(cx - 18.0, 256.0),
-            72.0,
+            pos2(cx - 18.0, 260.0),
+            96.0,
             theme::CAP_WHITE,
             "White set value for this position.",
         );
@@ -469,8 +473,8 @@ fn draw_panel(
             ui,
             setter,
             grays[col],
-            pos2(cx, 256.0),
-            72.0,
+            pos2(cx, 260.0),
+            96.0,
             theme::CAP_GRAY,
             "Gray set value for this position.",
         );
@@ -478,16 +482,16 @@ fn draw_panel(
             ui,
             setter,
             blacks[col],
-            pos2(cx + 18.0, 256.0),
-            72.0,
+            pos2(cx + 18.0, 260.0),
+            96.0,
             theme::CAP_BLACK,
             "Black set value for this position.",
         );
-        widgets::led(ui, pos2(cx, 302.0), position == (col + 2) as u8, theme::LED_RED);
+        widgets::led(ui, pos2(cx, 322.0), position == (col + 2) as u8, theme::LED_RED);
     }
     // Position 1 = the panel itself.
-    widgets::led(ui, pos2(430.0, 302.0), position == 1, theme::LED_RED);
-    widgets::label(ui, pos2(430.0, 200.0), "1", 9.5, theme::INK_DIM);
+    widgets::led(ui, pos2(436.0, 322.0), position == 1, theme::LED_RED);
+    widgets::label(ui, pos2(436.0, 198.0), "1", 9.5, theme::INK_DIM);
 
     // --- Primary controls ---
     let ay = 366.0;
@@ -544,7 +548,7 @@ fn draw_panel(
         ui,
         setter,
         &params.res_gate,
-        Rect::from_center_size(pos2(756.0, 360.0), vec2(28.0, 16.0)),
+        Rect::from_center_size(pos2(760.0, 366.0), vec2(30.0, 18.0)),
         "GATE",
         Some(theme::LED_RED),
         "Gate the resonance with the 1-8 buttons (or MIDI notes): play the \
@@ -601,12 +605,24 @@ fn draw_panel(
         "Op-amp output drive on the tape + dry mix.",
     );
 
-    // --- Right block ---
+    // --- Right block: two rows aligned with the primary knob rows ---
+    let setup = widgets::action_button(
+        ui,
+        Rect::from_center_size(pos2(1008.0, 144.0), vec2(46.0, 22.0)),
+        "SETUP",
+        state.settings_open,
+        Some(theme::LED_YELLOW),
+        "Tape stock, aging, hiss, mechanism, quality, MIDI — the machine room.",
+    );
+    if setup.clicked() {
+        state.settings_open = !state.settings_open;
+    }
+
     widgets::switch3(
         ui,
         setter,
         &params.anomaly_pol,
-        pos2(846.0, 354.0),
+        pos2(854.0, ay),
         ["-", "OFF", "+"],
         "Anomaly polarity: the tape hiccup bends pitch down (-) or up (+). \
          Middle = off.",
@@ -615,7 +631,7 @@ fn draw_panel(
         ui,
         setter,
         &params.anomaly,
-        pos2(922.0, 366.0),
+        pos2(926.0, ay),
         15.0,
         "ANMLY",
         "Anomaly amount: a single speed blip on the cycle's final step, from \
@@ -625,7 +641,7 @@ fn draw_panel(
         ui,
         setter,
         &params.motor_kill,
-        Rect::from_center_size(pos2(992.0, 360.0), vec2(36.0, 22.0)),
+        Rect::from_center_size(pos2(1000.0, ay), vec2(36.0, 22.0)),
         "MTR",
         Some(theme::LED_RED),
         "Hold: kill the motor — pitch drags down to a dead stop. Release to \
@@ -636,43 +652,48 @@ fn draw_panel(
         ui,
         setter,
         &params.tape_type,
-        pos2(846.0, 418.0),
+        pos2(854.0, by),
         ["NM", "CH", "MT"],
-        "Tape formulation: I Normal (warm, saturates early), II Chrome \
-         (cleaner), IV Metal (most headroom).",
+        "The deck's tape-type setting (bias/EQ): I Normal (warm, saturates \
+         early), II Chrome (cleaner), IV Metal (most headroom). Picking a \
+         stock in SETUP sets this to the cassette's native type; moving it \
+         away is a mis-set deck — a sound of its own.",
     );
+    // Amber tell-tale when the deck setting doesn't match the cassette's
+    // native formulation (deliberate mis-set or leftover).
+    let native = match stock_profile.default_kind {
+        te2_dsp::tape::TapeKind::I => crate::params::TapeType::Normal,
+        te2_dsp::tape::TapeKind::II => crate::params::TapeType::Chrome,
+        te2_dsp::tape::TapeKind::IV => crate::params::TapeType::Metal,
+    };
+    let mismatch = params.tape_type.value() != native;
+    widgets::led(ui, pos2(816.0, by), mismatch, theme::LED_YELLOW);
+    if mismatch {
+        ui.allocate_rect(
+            Rect::from_center_size(pos2(816.0, by), vec2(12.0, 12.0)),
+            Sense::hover(),
+        )
+        .on_hover_text(format!(
+            "Deck set to a different type than the {} in the well — \
+             sounds like a mis-set deck. Re-pick the stock in SETUP to match.",
+            stock_profile.label
+        ));
+    }
     widgets::knob(
         ui,
         setter,
         &params.tape_in,
-        pos2(922.0, 430.0),
+        pos2(926.0, by),
         15.0,
         "TAPE IN",
         "How hot the signal hits the tape. Drives saturation and compression; \
          the VU reads this.",
     );
-    widgets::switch3(
-        ui,
-        setter,
-        &params.quality,
-        pos2(1008.0, 418.0),
-        ["ECO", "STD", "ULT"],
-        "Oversampling for the tape magnetics: 2x / 4x / 8x.",
-    );
-
-    widgets::switch3(
-        ui,
-        setter,
-        &params.input_char,
-        pos2(846.0, 484.0),
-        ["GT", "-10", "+4"],
-        "Input level standard: guitar hi-Z, -10 dBV consumer, +4 dBu pro.",
-    );
     widgets::knob(
         ui,
         setter,
         &params.out_level,
-        pos2(922.0, 494.0),
+        pos2(1000.0, by),
         15.0,
         "OUT",
         "Output trim, -24 to +6 dB.",
@@ -682,8 +703,309 @@ fn draw_panel(
     painter.text(
         pos2(panel.center().x, panel.bottom() - 8.0),
         Align2::CENTER_CENTER,
-        "A  SPACE CASE TE-2  TRIBUTE   ·   CASSETTE TAPE ECHO",
+        "CASSETTE  TAPE  ECHO",
         FontId::monospace(7.5),
         Color32::from_rgb(0x4A, 0x48, 0x44),
     );
+
+    if state.settings_open {
+        draw_settings_overlay(ui, setter, params, shared, state);
+    }
+}
+
+/// The TAPE & MACHINE overlay: a modal card over a dimmed faceplate.
+/// Hosts the tape stock drawer, the aging controls, and the setup trims
+/// that used to crowd the panel (NOISE / MECH / quality).
+fn draw_settings_overlay(
+    ui: &mut egui::Ui,
+    setter: &nice_plug::prelude::ParamSetter,
+    params: &Te2Params,
+    shared: &UiShared,
+    state: &mut EditorState,
+) {
+    use crate::params::{TapeStockParam, TapeType};
+    use te2_dsp::tape::TapeKind;
+
+    let full = ui.max_rect();
+    let mut close = ui.input(|i| i.key_pressed(egui::Key::Escape));
+
+    egui::Area::new(egui::Id::new("te2-settings-overlay"))
+        .order(egui::Order::Foreground)
+        .fixed_pos(pos2(0.0, 0.0))
+        .show(ui.ctx(), |ui| {
+            // Scrim: dims the faceplate, swallows its input, closes on click.
+            let scrim = ui.allocate_rect(full, Sense::click());
+            ui.painter()
+                .rect_filled(full, 0.0, Color32::from_black_alpha(170));
+            if scrim.clicked() {
+                close = true;
+            }
+
+            // The card. Allocated so clicks in its gaps don't reach the scrim.
+            let card = Rect::from_min_max(pos2(170.0, 64.0), pos2(910.0, 496.0));
+            ui.allocate_rect(card, Sense::click());
+            let p = ui.painter();
+            p.rect_filled(card, 6.0, Color32::from_rgb(0x17, 0x17, 0x18));
+            p.rect_stroke(
+                card,
+                6.0,
+                Stroke::new(1.5, theme::KNOB_EDGE),
+                StrokeKind::Inside,
+            );
+            p.text(
+                pos2(card.left() + 22.0, card.top() + 24.0),
+                Align2::LEFT_CENTER,
+                "TAPE  &  MACHINE",
+                FontId::monospace(15.0),
+                theme::INK,
+            );
+
+            // Close button.
+            let x_rect = Rect::from_center_size(pos2(card.right() - 24.0, card.top() + 24.0), vec2(20.0, 20.0));
+            let x_resp = ui.allocate_rect(x_rect, Sense::click());
+            let x_color = if x_resp.hovered() { theme::INK } else { theme::INK_DIM };
+            let c = x_rect.center();
+            let r = 4.5;
+            for (a, b) in [
+                (c + vec2(-r, -r), c + vec2(r, r)),
+                (c + vec2(-r, r), c + vec2(r, -r)),
+            ] {
+                ui.painter().line_segment([a, b], Stroke::new(1.6, x_color));
+            }
+            if x_resp.clicked() {
+                close = true;
+            }
+
+            // --- Stock drawer (left + middle columns) ---
+            let group = |ui: &mut egui::Ui, title: &str, x: f32, y: f32| {
+                widgets::label(ui, pos2(x + 106.0, y), title, 9.0, theme::INK_DIM);
+            };
+            let selected = params.tape_stock.value();
+            let stock_row = |ui: &mut egui::Ui, x: f32, y: f32, stock: TapeStockParam| {
+                let rect = Rect::from_min_size(pos2(x, y), vec2(212.0, 20.0));
+                let resp = ui.allocate_rect(rect, Sense::click());
+                let profile = stock.to_dsp().profile();
+                let is_sel = selected == stock;
+                let p = ui.painter();
+                let bg = if is_sel {
+                    theme::KNOB_EDGE
+                } else if resp.hovered() {
+                    Color32::from_rgb(0x24, 0x24, 0x26)
+                } else {
+                    theme::KNOB_BODY
+                };
+                p.rect_filled(rect, 3.0, bg);
+                widgets::led(ui, pos2(x + 11.0, rect.center().y), is_sel, theme::LED_YELLOW);
+                ui.painter().text(
+                    pos2(x + 22.0, rect.center().y),
+                    Align2::LEFT_CENTER,
+                    profile.label,
+                    FontId::monospace(8.5),
+                    if is_sel { theme::INK } else { theme::INK_DIM },
+                );
+                let kind_badge = match profile.default_kind {
+                    TapeKind::I => "I",
+                    TapeKind::II => "II",
+                    TapeKind::IV => "IV",
+                };
+                ui.painter().text(
+                    pos2(rect.right() - 10.0, rect.center().y),
+                    Align2::RIGHT_CENTER,
+                    kind_badge,
+                    FontId::monospace(8.0),
+                    theme::INK_DIM,
+                );
+                if resp.clicked() && !is_sel {
+                    setter.begin_set_parameter(&params.tape_stock);
+                    setter.set_parameter(&params.tape_stock, stock);
+                    setter.end_set_parameter(&params.tape_stock);
+                    // A new cassette comes with its native formulation; the
+                    // faceplate NM/CH/MT switch can still override it.
+                    let tape_type = match profile.default_kind {
+                        TapeKind::I => TapeType::Normal,
+                        TapeKind::II => TapeType::Chrome,
+                        TapeKind::IV => TapeType::Metal,
+                    };
+                    setter.begin_set_parameter(&params.tape_type);
+                    setter.set_parameter(&params.tape_type, tape_type);
+                    setter.end_set_parameter(&params.tape_type);
+                }
+                resp.on_hover_text(format!(
+                    "~{:.0} min of rolling to fully worn · hiss ×{:.2} · drive ×{:.2}",
+                    profile.aging_seconds / 60.0,
+                    profile.noise_mul,
+                    profile.drive_mul,
+                ));
+            };
+
+            let col_a = 192.0;
+            let col_b = 424.0;
+            group(ui, "PREMIUM  ·  ~1 H TO WORN", col_a, 64.0 + 54.0);
+            for (i, s) in [
+                TapeStockParam::MaxellXlii,
+                TapeStockParam::TdkSa,
+                TapeStockParam::TdkMa,
+                TapeStockParam::SonyMetalEs,
+                TapeStockParam::BasfChromeMaxima,
+                TapeStockParam::NakamichiExii,
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                stock_row(ui, col_a, 64.0 + 66.0 + i as f32 * 24.0, s);
+            }
+            group(ui, "STANDARD  ·  ~40 MIN", col_a, 64.0 + 226.0);
+            for (i, s) in [
+                TapeStockParam::TdkAd,
+                TapeStockParam::MaxellUdii,
+                TapeStockParam::SonyUx,
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                stock_row(ui, col_a, 64.0 + 238.0 + i as f32 * 24.0, s);
+            }
+            group(ui, "BUDGET  ·  ~20 MIN", col_b, 64.0 + 54.0);
+            for (i, s) in [
+                TapeStockParam::TdkD,
+                TapeStockParam::SonyHf,
+                TapeStockParam::RealisticSupertape,
+                TapeStockParam::Memorex,
+                TapeStockParam::Generic,
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                stock_row(ui, col_b, 64.0 + 66.0 + i as f32 * 24.0, s);
+            }
+
+            // --- Aging (right column) ---
+            let col_c = 668.0;
+            widgets::label(ui, pos2(col_c + 105.0, 118.0), "TAPE AGING", 9.0, theme::INK_DIM);
+            widgets::toggle_button(
+                ui,
+                setter,
+                &params.aging_on,
+                Rect::from_center_size(pos2(col_c + 24.0, 142.0), vec2(40.0, 18.0)),
+                "AGING",
+                Some(theme::LED_YELLOW),
+                "Tape wears while the transport rolls: more wow, dropouts and \
+                 hiss, less top end and headroom. Off = pristine forever.",
+            );
+            widgets::toggle_button(
+                ui,
+                setter,
+                &params.aging_freeze,
+                Rect::from_center_size(pos2(col_c + 86.0, 142.0), vec2(44.0, 18.0)),
+                "FREEZE",
+                Some(theme::LED_GREEN),
+                "Hold the wear exactly where it is — keep a worn character \
+                 without it getting worse.",
+            );
+
+            // Wear bar.
+            let age = params.tape_age.load(Ordering::Relaxed).clamp(0.0, 1.0);
+            let aging_on = params.aging_on.value();
+            let bar = Rect::from_min_max(pos2(col_c, 178.0), pos2(col_c + 210.0, 190.0));
+            let bar_resp = ui.allocate_rect(bar, Sense::hover());
+            let p = ui.painter();
+            p.rect_filled(bar, 3.0, theme::FADER_TRACK);
+            if age > 0.0 {
+                let fill = Rect::from_min_max(bar.min, pos2(bar.left() + bar.width() * age, bar.bottom()));
+                let color = if aging_on {
+                    Color32::from_rgb(0xB8, 0x86, 0x38)
+                } else {
+                    theme::KNOB_EDGE
+                };
+                p.rect_filled(fill, 3.0, color);
+            }
+            p.rect_stroke(bar, 3.0, Stroke::new(0.8, theme::PANEL_EDGE), StrokeKind::Outside);
+            let profile = params.tape_stock.value().to_dsp().profile();
+            ui.painter().text(
+                pos2(col_c, 200.0),
+                Align2::LEFT_CENTER,
+                format!(
+                    "WEAR {:>3.0}%{}", age * 100.0,
+                    if aging_on { "" } else { "  · BYPASSED" }
+                ),
+                FontId::monospace(8.5),
+                theme::INK_DIM,
+            );
+            bar_resp.on_hover_text(format!(
+                "This {} is ~{:.0} min of rolling from fresh to fully worn. \
+                 Wear is saved with the project.",
+                profile.label,
+                profile.aging_seconds / 60.0,
+            ));
+
+            // New cassette: wipes the tape and the wear (same as STP/EJ
+            // double-press on the faceplate).
+            let fresh = widgets::action_button(
+                ui,
+                Rect::from_center_size(pos2(col_c + 52.0, 228.0), vec2(104.0, 20.0)),
+                "NEW CASSETTE",
+                false,
+                None,
+                "Drop in a fresh tape: wipes everything on the loop and \
+                 resets wear to zero.",
+            );
+            if fresh.clicked() {
+                shared.eject.store(true, Ordering::Relaxed);
+            }
+
+            // --- Machine trims (right column, lower) ---
+            widgets::label(ui, pos2(col_c + 105.0, 296.0), "MACHINE", 9.0, theme::INK_DIM);
+            widgets::knob(
+                ui,
+                setter,
+                &params.noise,
+                pos2(col_c + 30.0, 336.0),
+                17.0,
+                "NOISE",
+                "Tape hiss level. The noise is recorded onto the tape, so it \
+                 regenerates through the feedback loop like real hiss.",
+            );
+            widgets::knob(
+                ui,
+                setter,
+                &params.mech,
+                pos2(col_c + 106.0, 336.0),
+                17.0,
+                "MECH",
+                "Mechanism condition: wow, flutter, dropouts and bias sag. \
+                 0 = freshly serviced, full = thrift-store wreck.",
+            );
+            widgets::switch3(
+                ui,
+                setter,
+                &params.quality,
+                pos2(col_c + 40.0, 412.0),
+                ["ECO", "STD", "ULT"],
+                "Oversampling for the tape magnetics: 2x / 4x / 8x.",
+            );
+            widgets::toggle_button(
+                ui,
+                setter,
+                &params.midi_enable,
+                Rect::from_center_size(pos2(col_c + 140.0, 412.0), vec2(36.0, 16.0)),
+                "MIDI",
+                Some(theme::LED_GREEN),
+                "Let MIDI notes C3-G3 select and gate positions. Off by \
+                 default so a keyboard routed to the track doesn't move the \
+                 sequencer.",
+            );
+
+            // Footer hint.
+            ui.painter().text(
+                pos2(card.center().x, card.bottom() - 14.0),
+                Align2::CENTER_CENTER,
+                "STOCK SETS THE NM/CH/MT SWITCH TO ITS NATIVE TYPE  ·  STP/EJ DOUBLE-PRESS = FRESH CASSETTE",
+                FontId::monospace(7.0),
+                Color32::from_rgb(0x4A, 0x48, 0x44),
+            );
+        });
+
+    if close {
+        state.settings_open = false;
+    }
 }

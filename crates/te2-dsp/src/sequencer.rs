@@ -72,6 +72,12 @@ pub struct SeqConfig {
     pub cycle_len: u8,
     /// Steps per second, 0.125..=4000.
     pub cycle_rate: f32,
+    /// Host-clock lock: the absolute song position measured in cycle steps
+    /// (beats / beats-per-step), when the host transport is rolling and rate
+    /// sync is on. The cycle phase snaps to this at every block start, so
+    /// steps land on the DAW grid instead of free-running at a matching rate.
+    /// `None` = free-run (sync off, or transport stopped).
+    pub host_step_pos: Option<f64>,
 
     /// Manual position 1..=8 (used when the cycle is stopped).
     pub manual_position: u8,
@@ -110,6 +116,7 @@ impl Default for SeqConfig {
             cycle_run: false,
             cycle_len: 8,
             cycle_rate: 1.0,
+            host_step_pos: None,
             manual_position: 1,
             anomaly_amount: 0.3,
             anomaly_polarity: AnomalyPolarity::Off,
@@ -274,6 +281,23 @@ impl Sequencer {
         if config.cycle_run && !was_running {
             self.phase = 0.0;
             self.cycle_idx = 0;
+        }
+        // Host-clock lock: land exactly where the DAW playhead says we are.
+        // The per-sample clock still advances within the block; this snap at
+        // block rate is what keeps steps on the grid through loops, jumps
+        // and tempo changes.
+        if let (true, Some(step_pos)) = (config.cycle_run, config.host_step_pos) {
+            let len = config.cycle_len.clamp(1, 8);
+            let step_pos = step_pos.max(0.0);
+            let idx = (step_pos.floor() as u64 % len as u64) as u8;
+            self.phase = step_pos.fract();
+            if idx != self.cycle_idx {
+                self.cycle_idx = idx;
+                // Landing on the final step counts as entering it.
+                if config.anomaly_polarity != AnomalyPolarity::Off && idx == len - 1 {
+                    self.trigger_anomaly();
+                }
+            }
         }
         let coeff = |drift_s: f32| -> f32 {
             if drift_s <= 1e-3 {
@@ -535,6 +559,49 @@ mod tests {
         assert!(
             slewed < 0.001,
             "drift 2s should glide smoothly: max step {slewed}"
+        );
+    }
+
+    #[test]
+    fn host_sync_locks_position_to_the_playhead() {
+        let mut seq = Sequencer::new(48_000.0);
+        let mut cfg = SeqConfig {
+            cycle_run: true,
+            cycle_len: 4,
+            cycle_rate: 2.0,
+            ..Default::default()
+        };
+        // Free-run somewhere arbitrary first.
+        seq.set_config(&cfg);
+        for _ in 0..10_000 {
+            seq.process();
+        }
+
+        // Host says we're 6.25 steps into the song: 6 % 4 = step index 2,
+        // position 3, a quarter of the way through the step.
+        cfg.host_step_pos = Some(6.25);
+        seq.set_config(&cfg);
+        assert_eq!(seq.position(), 3, "position must land on the host grid");
+
+        // A later block reports the playhead jumped back (loop region):
+        // the cycle follows instead of free-running past it.
+        cfg.host_step_pos = Some(0.5);
+        seq.set_config(&cfg);
+        assert_eq!(seq.position(), 1, "loop jump must re-lock the cycle");
+
+        // Between blocks the per-sample clock still advances: half a step
+        // at 2 steps/s = 0.25 s to the next boundary.
+        let mut steps_seen = vec![seq.position()];
+        for _ in 0..(48_000 / 2) {
+            let out = seq.process();
+            if *steps_seen.last().unwrap() != out.position {
+                steps_seen.push(out.position);
+            }
+        }
+        assert_eq!(
+            steps_seen,
+            vec![1, 2],
+            "per-sample clock should advance to the next step between snaps"
         );
     }
 

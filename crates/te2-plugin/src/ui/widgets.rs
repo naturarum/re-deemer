@@ -99,6 +99,21 @@ pub fn knob<P: Param>(
     text: &str,
     help: &str,
 ) {
+    knob_capped(ui, setter, param, center, radius, text, None, help);
+}
+
+/// Rotary knob with a colored cap (e.g. the per-set DRIFT knobs wear their
+/// set's fader-cap color so they can be told apart at a glance).
+pub fn knob_capped<P: Param>(
+    ui: &mut Ui,
+    setter: &ParamSetter,
+    param: &P,
+    center: Pos2,
+    radius: f32,
+    text: &str,
+    cap: Option<Color32>,
+    help: &str,
+) {
     let rect = Rect::from_center_size(center, Vec2::splat(radius * 2.2));
     let response = ui.allocate_rect(rect, Sense::click_and_drag());
     drag_normalized(ui, &response, setter, param, 220.0);
@@ -106,15 +121,40 @@ pub fn knob<P: Param>(
     let painter = ui.painter();
     painter.circle_filled(center, radius, theme::KNOB_BODY);
     painter.circle_stroke(center, radius, Stroke::new(1.5, theme::KNOB_EDGE));
+    if let Some(c) = cap {
+        painter.circle_filled(center, radius * 0.55, c);
+        painter.circle_stroke(
+            center,
+            radius * 0.55,
+            Stroke::new(0.8, Color32::from_black_alpha(160)),
+        );
+    }
 
-    // Pointer: 7 o'clock to 5 o'clock sweep.
+    // Pointer: 7 o'clock to 5 o'clock sweep. Over a colored cap it is drawn
+    // in two segments so each half contrasts with what's beneath it.
     let norm = param.unmodulated_normalized_value();
     let angle = (-225.0 + norm * 270.0).to_radians();
     let dir = vec2(angle.cos(), angle.sin());
-    painter.line_segment(
-        [center + dir * (radius * 0.25), center + dir * (radius * 0.92)],
-        Stroke::new(2.0, theme::KNOB_MARK),
-    );
+    if let Some(c) = cap {
+        let on_cap = if (c.r() as u16 + c.g() as u16 + c.b() as u16) > 360 {
+            Color32::from_rgb(0x18, 0x16, 0x14)
+        } else {
+            theme::KNOB_MARK
+        };
+        painter.line_segment(
+            [center + dir * (radius * 0.18), center + dir * (radius * 0.52)],
+            Stroke::new(2.0, on_cap),
+        );
+        painter.line_segment(
+            [center + dir * (radius * 0.58), center + dir * (radius * 0.92)],
+            Stroke::new(2.0, theme::KNOB_MARK),
+        );
+    } else {
+        painter.line_segment(
+            [center + dir * (radius * 0.25), center + dir * (radius * 0.92)],
+            Stroke::new(2.0, theme::KNOB_MARK),
+        );
+    }
     // End-of-travel ticks.
     for t in [-225.0f32, 45.0] {
         let a = t.to_radians();

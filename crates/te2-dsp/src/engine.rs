@@ -19,6 +19,7 @@ use crate::tape::magnetics::{Hysteresis, MagParams};
 use crate::tape::noise::{NoiseProfile, TapeNoise};
 use crate::tape::reel::TapeReel;
 use crate::tape::transport::{Mechanism, Motor};
+use crate::tape::stock::{StockProfile, TapeStock};
 use crate::tape::wow_flutter::WowFlutter;
 use crate::tape::{HEAD_GAP, TAPE_RATE, TapeKind, speed_for_delay};
 
@@ -82,6 +83,13 @@ pub struct EngineParams {
     pub out_drive: f32,
     /// Cassette in the well.
     pub tape_kind: TapeKind,
+    /// Brand-grade of that cassette: aging rate, base hiss, headroom.
+    pub stock: TapeStock,
+    /// Tape aging master switch: off = the tape stays pristine forever
+    /// (the age clock pauses and wear effects are bypassed, value retained).
+    pub aging_on: bool,
+    /// Freeze the age clock at its current value, keeping the wear character.
+    pub aging_freeze: bool,
     /// Mechanism condition 0..1 (0 mint, 1 wreck): wow/flutter, dropouts,
     /// bias sag.
     pub condition: f32,
@@ -124,6 +132,9 @@ impl Default for EngineParams {
             res_active: true,
             out_drive: 0.0,
             tape_kind: TapeKind::I,
+            stock: TapeStock::MaxellXlii,
+            aging_on: true,
+            aging_freeze: false,
             condition: 0.35,
             noise_amount: 1.0,
             os_factor: OsFactor::X4,
@@ -173,9 +184,34 @@ pub struct Te2Engine {
     // The echo-path OTA filters (post-repro, pre-feedback-origin).
     ota_hp: [OtaHighpass; 2],
     ota_lp: [OtaLowpass; 2],
+    /// Fast smoother on the effective resonance so the RES gate opens and
+    /// closes like a VCA instead of snapping coefficients (clicks).
+    res_smooth: f32,
+    res_smooth_coeff: f32,
 
     // OUT DRV on the final mix.
     out_drive: OutputDrive,
+
+    /// Signed tape footage traversed since the cassette went in, in cells.
+    /// Pure cosmetics feed (the UI spool animation) — but driven by the
+    /// real motion: RW runs it backwards, MTR stalls it, TIME scales it.
+    footage_cells: f64,
+
+    // Tape aging: wear accumulated while the transport rolls, plus the
+    // stock-derived multipliers it (and the stock itself) feed. `age` is
+    // 0.0 fresh .. 1.0 fully worn; the plugin persists it with the project.
+    stock: StockProfile,
+    age: f32,
+    /// Wear state last folded into the machinery (avoids re-deriving filter
+    /// coefficients and bias every control tick while nothing moved).
+    applied_cond: f32,
+    applied_age: f32,
+    /// Stock hiss x wear hiss lift, applied to the noise amount.
+    noise_wear_mul: f32,
+    /// Drive into / out of the magnetics: worn or cheap oxide saturates
+    /// earlier (in > 1) and puts out less level (out < 1/in).
+    drive_in: f32,
+    drive_out: f32,
 
     // DC blocker inside the feedback loop.
     fb_dc_coeff: f32,
@@ -237,7 +273,17 @@ impl Te2Engine {
             record_bw: [[Biquad::default(); 2]; 2],
             ota_hp: [OtaHighpass::default(), OtaHighpass::default()],
             ota_lp: [OtaLowpass::default(), OtaLowpass::default()],
+            res_smooth: 0.0,
+            res_smooth_coeff: Smoothed::coeff(sample_rate, 0.003),
             out_drive: OutputDrive::new(sample_rate),
+            footage_cells: 0.0,
+            stock: params.stock.profile(),
+            age: 0.0,
+            applied_cond: -1.0,
+            applied_age: -1.0,
+            noise_wear_mul: 1.0,
+            drive_in: 1.0,
+            drive_out: 1.0,
             fb_dc_coeff: OnePole::coeff(sr, 10.0),
             fb_dc: [OnePole::default(); 2],
             fb_sample: [0.0; 2],
@@ -252,6 +298,7 @@ impl Te2Engine {
             control_countdown: 0,
         };
         engine.apply_params();
+        engine.refresh_wear();
         engine.update_speed_filters(engine.motor.current_speed().abs().max(0.05));
         engine
     }
@@ -275,6 +322,64 @@ impl Te2Engine {
         self.sequencer.position()
     }
 
+    /// Signed seconds of tape that have passed the heads since the cassette
+    /// went in (negative = rewound past the start). Feeds the spool animation.
+    pub fn tape_footage_seconds(&self) -> f64 {
+        self.footage_cells / TAPE_RATE
+    }
+
+    /// Tape wear, 0.0 fresh .. 1.0 fully worn. Persisted with the project.
+    pub fn age(&self) -> f32 {
+        self.age
+    }
+
+    /// Restore tape wear (project load). Applies immediately.
+    pub fn set_age(&mut self, age: f32) {
+        self.age = age.clamp(0.0, 1.0);
+        self.refresh_wear();
+    }
+
+    /// Wear that is actually audible right now (aging off = pristine).
+    fn age_eff(&self) -> f32 {
+        if self.params.aging_on { self.age } else { 0.0 }
+    }
+
+    /// Mechanism condition + stock shell quality + tape wear, clamped.
+    fn effective_condition(&self) -> f32 {
+        (self.params.condition + self.stock.condition_add + 0.55 * self.age_eff()).clamp(0.0, 1.0)
+    }
+
+    /// Fold the current wear state into the machinery: bias sag, wow/flutter,
+    /// head EQ corners, hiss floor, magnetics drive. Cheap (no calibration
+    /// sims), called whenever condition/stock/age moved.
+    fn refresh_wear(&mut self) {
+        let age = self.age_eff();
+        let cond = self.effective_condition();
+        // A worn machine's bias sags: more hysteresis grit. Physical, so
+        // the small level shift that comes with it is kept.
+        let idx = match self.params.tape_kind {
+            TapeKind::I => 0,
+            TapeKind::II => 1,
+            TapeKind::IV => 2,
+        };
+        let base = self.mag_by_kind[idx];
+        self.mag = MagParams {
+            bias: base.bias * (1.0 - 0.30 * cond as f64),
+            ..base
+        };
+        self.wow_flutter.set_condition(cond as f64);
+        for ch in 0..2 {
+            self.record_eq[ch].set_wear(age);
+            self.repro_eq[ch].set_wear(age);
+        }
+        // Shed oxide hisses more and has less to give before it squashes.
+        self.noise_wear_mul = self.stock.noise_mul * (1.0 + 1.2 * age);
+        self.drive_in = self.stock.drive_mul * (1.0 + 0.5 * age);
+        self.drive_out = (1.0 / self.drive_in) * (1.0 - 0.12 * age);
+        self.applied_cond = cond;
+        self.applied_age = age;
+    }
+
     /// STP/EJ pressed twice: pop the cassette and put in a fresh one. Also
     /// flushes the signal in flight — with no tape in the well there is no
     /// loop for it to live in.
@@ -282,6 +387,10 @@ impl Te2Engine {
         self.reel.reset();
         self.fb_sample = [0.0; 2];
         self.vu_env = 0.0;
+        // A fresh cassette goes in the well: wear starts over, fully wound.
+        self.age = 0.0;
+        self.footage_cells = 0.0;
+        self.refresh_wear();
         for ch in 0..2 {
             self.fb_dc[ch].reset();
             self.ota_hp[ch].reset();
@@ -298,15 +407,14 @@ impl Te2Engine {
 
     pub fn set_params(&mut self, params: &EngineParams) {
         let kind_changed = params.tape_kind != self.params.tape_kind;
+        let stock_changed = params.stock != self.params.stock;
+        let aging_toggled = params.aging_on != self.params.aging_on;
         let condition_changed = (params.condition - self.params.condition).abs() > 1e-6;
         self.params = *params;
+        if stock_changed {
+            self.stock = params.stock.profile();
+        }
         if kind_changed {
-            let idx = match params.tape_kind {
-                TapeKind::I => 0,
-                TapeKind::II => 1,
-                TapeKind::IV => 2,
-            };
-            self.mag = self.mag_by_kind[idx];
             self.noise_profile = NoiseProfile::for_params(&self.mag, params.tape_kind);
             let eq = EqProfile::for_kind(params.tape_kind);
             for ch in 0..2 {
@@ -315,20 +423,8 @@ impl Te2Engine {
                 self.noise[ch].set_profile(self.sample_rate, &self.noise_profile);
             }
         }
-        if kind_changed || condition_changed {
-            // A worn machine's bias sags: more hysteresis grit. Physical, so
-            // the small level shift that comes with it is kept.
-            let idx = match params.tape_kind {
-                TapeKind::I => 0,
-                TapeKind::II => 1,
-                TapeKind::IV => 2,
-            };
-            let base = self.mag_by_kind[idx];
-            self.mag = MagParams {
-                bias: base.bias * (1.0 - 0.30 * params.condition as f64),
-                ..base
-            };
-            self.wow_flutter.set_condition(params.condition as f64);
+        if kind_changed || stock_changed || aging_toggled || condition_changed {
+            self.refresh_wear();
         }
         self.apply_params();
     }
@@ -360,6 +456,12 @@ impl Te2Engine {
         for ch in 0..2 {
             self.ota_hp[ch].set(sr, p.hpf_hz);
             self.ota_lp[ch].set(sr, p.lpf_hz, res);
+        }
+        // While nothing gates or sequences the resonance, keep the gate
+        // smoother parked at the panel value so engaging the gate later
+        // ramps from the right place.
+        if !p.res_gate_enabled {
+            self.res_smooth = res;
         }
         self.out_drive.set_amount(p.out_drive);
 
@@ -412,7 +514,8 @@ impl Te2Engine {
 
         // Local tape Nyquist in host terms is 0.5 * v * TAPE_RATE. Stay under
         // it for anti-aliasing; the 20 kHz cap is the electronics' own limit.
-        let record_fc = (0.42 * speed * TAPE_RATE) as f32;
+        // Worn oxide can't hold the top end even at full speed.
+        let record_fc = (0.42 * speed * TAPE_RATE) as f32 * (1.0 - 0.30 * self.age_eff());
         let record_fc = record_fc.min(0.45 * sr).min(20_000.0);
         // Butterworth Q values for a 4th-order cascade.
         self.record_bw_coeffs = [
@@ -431,6 +534,27 @@ impl Te2Engine {
         if self.control_countdown == 0 {
             self.control_countdown = CONTROL_INTERVAL;
             let speed = self.motor.current_speed().abs().max(0.05);
+
+            // Tape wear: the oxide grinds against the heads whenever the
+            // transport actually rolls. Hour-scale, so control rate is plenty.
+            if self.params.aging_on && !self.params.aging_freeze && self.age < 1.0 {
+                let rolling = !matches!(
+                    self.motor.mechanism,
+                    Mechanism::Stopped | Mechanism::Paused
+                ) && self.motor.current_speed().abs() > 0.02;
+                if rolling {
+                    let dt = CONTROL_INTERVAL as f64 / self.sample_rate;
+                    self.age = (self.age + (dt / self.stock.aging_seconds as f64) as f32).min(1.0);
+                }
+            }
+            // Re-derive the wear-coupled machinery only once it audibly moved
+            // (~0.1% of the wear range).
+            if (self.effective_condition() - self.applied_cond).abs() > 1e-3
+                || (self.age_eff() - self.applied_age).abs() > 1e-3
+            {
+                self.refresh_wear();
+            }
+
             self.update_speed_filters(speed);
         }
         self.control_countdown -= 1;
@@ -475,9 +599,12 @@ impl Te2Engine {
             || seq_out.res.is_some()
             || self.params.res_gate_enabled
         {
+            // Gate transitions ramp over ~3 ms — a VCA-style open/close, not
+            // a coefficient snap (which clicks with signal in the filter).
+            self.res_smooth += self.res_smooth_coeff * (res_eff - self.res_smooth);
             let sr = self.sample_rate as f32;
             for ch in 0..2 {
-                self.ota_lp[ch].set(sr, lpf_eff, res_eff);
+                self.ota_lp[ch].set(sr, lpf_eff, self.res_smooth);
                 self.ota_hp[ch].set(sr, hpf_eff);
             }
         }
@@ -485,6 +612,7 @@ impl Te2Engine {
         let (wf_mult, dropout_gains) = self.wow_flutter.process();
         let v = self.motor.process() * (wf_mult + seq_out.anomaly_speed);
         let delta = v * TAPE_RATE / self.sample_rate;
+        self.footage_cells += delta;
 
         let feedback = self.feedback_g.next();
         let tape_in = self.tape_in_g.next();
@@ -493,7 +621,7 @@ impl Te2Engine {
 
         let os_factor = self.params.os_factor;
         let dt_os = 1.0 / (os_factor.factor() as f64 * self.sample_rate);
-        let noise_amount = self.params.noise_amount;
+        let noise_amount = self.params.noise_amount * self.noise_wear_mul;
 
         let dry = [left, right];
         let mut rec = [0.0f32; 2];
@@ -508,11 +636,16 @@ impl Te2Engine {
             let with_noise =
                 emphasized + self.noise[ch].process(&self.noise_profile, emphasized, noise_amount);
 
-            // The tape itself, at the oversampled rate.
+            // The tape itself, at the oversampled rate. Stock headroom and
+            // wear shift the operating point: cheap or worn oxide is driven
+            // relatively harder and gives back less (unity for small signals,
+            // earlier compression for hot ones).
             let mag = &self.mag;
             let hyst = &mut self.hysteresis[ch];
+            let driven = with_noise * self.drive_in;
             let magnetized = self.oversamplers[ch]
-                .process(os_factor, with_noise, |s| hyst.process(mag, s, dt_os));
+                .process(os_factor, driven, |s| hyst.process(mag, s, dt_os))
+                * self.drive_out;
 
             vu_in = vu_in.max(magnetized.abs());
 
@@ -568,6 +701,7 @@ impl Te2Engine {
     pub fn reset(&mut self) {
         self.motor.reset();
         self.reel.reset();
+        self.footage_cells = 0.0;
         self.wow_flutter.reset();
         self.sequencer.reset();
         for ch in 0..2 {
@@ -1105,6 +1239,222 @@ mod tests {
             peak = peak.max(y.abs());
         }
         assert!(peak < 1e-3, "tape should be blank after eject: {peak}");
+    }
+
+    #[test]
+    fn footage_tracks_real_tape_motion() {
+        let mut e = engine_48k();
+        // delay 0.35 s = nominal speed 1.0: one second rolled = one second
+        // of tape footage.
+        e.set_params(&clinical(0.35, 0.0));
+        for _ in 0..48_000 {
+            e.process(0.0, 0.0);
+        }
+        let f = e.tape_footage_seconds();
+        assert!((0.9..1.1).contains(&f), "1 s rolled should be ~1 s of tape: {f:.3}");
+
+        // Rewind runs it backwards.
+        e.set_params(&EngineParams {
+            transport: TransportKind::Play,
+            wind: Wind::Rewind,
+            ..clinical(0.35, 0.0)
+        });
+        for _ in 0..(4 * 48_000) {
+            e.process(0.0, 0.0);
+        }
+        assert!(
+            e.tape_footage_seconds() < f,
+            "rewind should wind footage back: {:.3}",
+            e.tape_footage_seconds()
+        );
+
+        // A fresh cassette is fully wound.
+        e.eject();
+        assert_eq!(e.tape_footage_seconds(), 0.0);
+    }
+
+    #[test]
+    fn gated_filter_synth_speaks_without_tape_hiss() {
+        // The RES-gate synth must work even with NOISE at zero: the OTA's
+        // own thermal floor seeds self-oscillation (this was a real user
+        // report — with hiss turned down the gate appeared dead).
+        let mut e = engine_48k();
+        let base = EngineParams {
+            lpf_hz: 600.0,
+            res: 1.0,
+            noise_amount: 0.0,
+            res_gate_enabled: true,
+            gate_held: false,
+            ..clinical(0.3, 0.0)
+        };
+        e.set_params(&base);
+        for _ in 0..48_000 {
+            e.process(0.0, 0.0);
+        }
+        // Gate closed: silent.
+        let mut peak = 0.0f32;
+        for _ in 0..24_000 {
+            let (y, _) = e.process(0.0, 0.0);
+            peak = peak.max(y.abs());
+        }
+        assert!(peak < 0.02, "gated-off filter should stay quiet: {peak}");
+
+        // Gate opened: audible within a second, from silence.
+        e.set_params(&EngineParams {
+            gate_held: true,
+            ..base
+        });
+        let mut t_audible = None;
+        for k in 0..(2 * 48_000) {
+            let (y, _) = e.process(0.0, 0.0);
+            if y.abs() > 0.05 {
+                t_audible = Some(k as f64 / 48_000.0);
+                break;
+            }
+        }
+        let t = t_audible.expect("gate opened but the filter never sang");
+        assert!(t < 1.0, "filter should speak promptly: {t:.2} s");
+    }
+
+    #[test]
+    fn tape_ages_only_while_rolling() {
+        // Maxell XL-II: 3600 s to fully worn, so 1 s of rolling = ~2.78e-4.
+        let mut e = engine_48k();
+        let base = clinical(0.3, 0.0);
+        e.set_params(&base);
+        for _ in 0..48_000 {
+            e.process(0.0, 0.0);
+        }
+        let rolled = e.age();
+        assert!(
+            (2.0e-4..4.0e-4).contains(&rolled),
+            "1 s of rolling should age ~2.8e-4: {rolled:.2e}"
+        );
+
+        // Stopped: the clock pauses.
+        e.set_params(&EngineParams { stop: true, ..base });
+        for _ in 0..48_000 {
+            e.process(0.0, 0.0);
+        }
+        assert_eq!(e.age(), rolled, "stopped tape must not age");
+
+        // Rolling but frozen: pauses too.
+        e.set_params(&EngineParams {
+            aging_freeze: true,
+            ..base
+        });
+        for _ in 0..48_000 {
+            e.process(0.0, 0.0);
+        }
+        assert_eq!(e.age(), rolled, "frozen aging must hold its value");
+
+        // Aging off: clock pauses, value retained.
+        e.set_params(&EngineParams {
+            aging_on: false,
+            ..base
+        });
+        for _ in 0..48_000 {
+            e.process(0.0, 0.0);
+        }
+        assert_eq!(e.age(), rolled, "aging off must not advance the clock");
+
+        // Eject: fresh cassette.
+        e.eject();
+        assert_eq!(e.age(), 0.0, "eject should reset wear");
+    }
+
+    #[test]
+    fn worn_tape_is_noisier_and_darker() {
+        let run = |age: f32| {
+            let mut e = engine_48k();
+            e.set_params(&EngineParams {
+                noise_amount: 1.0,
+                aging_freeze: true, // hold the wear exactly where we set it
+                ..clinical(0.25, 0.0)
+            });
+            e.set_age(age);
+            for _ in 0..48_000 {
+                e.process(0.0, 0.0);
+            }
+            // Noise floor RMS over 2 s of silence.
+            let n = 2 * 48_000;
+            let mut sum_sq = 0.0f64;
+            for _ in 0..n {
+                let (y, _) = e.process(0.0, 0.0);
+                sum_sq += (y as f64) * (y as f64);
+            }
+            let noise_db = 10.0 * (sum_sq / n as f64).log10();
+
+            // HF energy of the first echo of a click.
+            let mut out = Vec::new();
+            for k in 0..24_000 {
+                let x = if k < 24 { 0.9 } else { 0.0 };
+                let (y, _) = e.process(x, x);
+                out.push(y);
+            }
+            let w = &out[(0.25f64 * 48_000.0) as usize - 200..][..4_800];
+            let hf: f64 = w
+                .windows(2)
+                .map(|p| {
+                    let d = (p[1] - p[0]) as f64;
+                    d * d
+                })
+                .sum();
+            (noise_db, hf)
+        };
+        let (fresh_db, fresh_hf) = run(0.0);
+        let (worn_db, worn_hf) = run(0.9);
+        assert!(
+            worn_db > fresh_db + 3.0,
+            "worn tape should hiss more: fresh {fresh_db:.1} dB worn {worn_db:.1} dB"
+        );
+        assert!(
+            worn_hf < fresh_hf * 0.6,
+            "worn tape should be darker: fresh {fresh_hf:.2e} worn {worn_hf:.2e}"
+        );
+    }
+
+    #[test]
+    fn budget_stock_saturates_earlier_than_premium() {
+        let level = |stock: TapeStock, amp: f32| {
+            let mut e = engine_48k();
+            e.set_params(&EngineParams {
+                stock,
+                ..clinical(0.3, 0.0)
+            });
+            for _ in 0..48_000 {
+                e.process(0.0, 0.0);
+            }
+            let sr = 48_000.0;
+            let mut k = 0u64;
+            // Prime a second of tone so the echo window is steady-state.
+            let tone = |k: u64| (std::f64::consts::TAU * 700.0 * k as f64 / sr).sin() as f32;
+            let mut sum_sq = 0.0f64;
+            for i in 0..(2 * 48_000) {
+                let x = amp * tone(k);
+                k += 1;
+                let (y, _) = e.process(x, x);
+                if i >= 48_000 {
+                    sum_sq += (y as f64) * (y as f64);
+                }
+            }
+            (sum_sq / 48_000.0).sqrt()
+        };
+        // Hot: the no-name ferric runs out of headroom well before the XL-II.
+        let premium_hot = level(TapeStock::MaxellXlii, 0.9);
+        let budget_hot = level(TapeStock::Generic, 0.9);
+        assert!(
+            budget_hot < premium_hot * 0.92,
+            "budget stock should compress hot signal: XL-II {premium_hot:.3} generic {budget_hot:.3}"
+        );
+        // Quiet: small-signal gain stays in the same ballpark (unity-ish).
+        let premium_q = level(TapeStock::MaxellXlii, 0.05);
+        let budget_q = level(TapeStock::Generic, 0.05);
+        let ratio_db = 20.0 * (budget_q / premium_q).log10();
+        assert!(
+            ratio_db.abs() < 3.0,
+            "small-signal gain should match within 3 dB: {ratio_db:.2} dB"
+        );
     }
 
     #[test]

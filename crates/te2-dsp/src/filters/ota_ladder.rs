@@ -24,12 +24,19 @@ impl Stage {
     }
 }
 
+/// OTA input-stage thermal noise, peak linear (~-90 dBFS). Inaudible under
+/// any program material, but it's what lets the filter self-oscillate from
+/// true silence — a real OTA sings at full resonance even with no input,
+/// it doesn't wait for tape hiss to arrive and seed it.
+const THERMAL_NOISE: f32 = 3.0e-5;
+
 /// 4-pole OTA lowpass with resonance to self-oscillation.
 pub struct OtaLowpass {
     stages: [Stage; 4],
     big_g: f32,
     /// Feedback amount, 0..~4.3 (4.0 = oscillation threshold).
     k: f32,
+    rng: u32,
 }
 
 impl Default for OtaLowpass {
@@ -38,6 +45,7 @@ impl Default for OtaLowpass {
             stages: [Stage::default(); 4],
             big_g: 0.5,
             k: 0.0,
+            rng: 0x6A09_E667,
         }
     }
 }
@@ -66,8 +74,10 @@ impl OtaLowpass {
         let y4_lin = (g4 * x + sigma) / (1.0 + self.k * g4);
 
         // OTA input stage saturates the closed loop — this is what bounds
-        // self-oscillation into a sine.
-        let u = fast_tanh(x - self.k * y4_lin);
+        // self-oscillation into a sine. Its thermal noise rides along.
+        self.rng = self.rng.wrapping_mul(1664525).wrapping_add(1013904223);
+        let thermal = ((self.rng >> 8) as f32 / (1 << 23) as f32 - 1.0) * THERMAL_NOISE;
+        let u = fast_tanh(x + thermal - self.k * y4_lin);
 
         let y1 = self.stages[0].lp(u, big_g);
         let y2 = self.stages[1].lp(y1, big_g);

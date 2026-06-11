@@ -1,5 +1,6 @@
 //! Headless panel snapshot for development:
 //! `cargo run -p te2-plugin --features snapshot --bin te2-snapshot -- out.png`
+//! Pass `overlay` as a second argument to render with the settings card open.
 
 use nice_plug::prelude::*;
 use std::sync::Arc;
@@ -30,16 +31,22 @@ fn main() {
     let out = std::env::args()
         .nth(1)
         .unwrap_or_else(|| "te2-panel.png".to_string());
+    let overlay = std::env::args().nth(2).is_some_and(|a| a == "overlay");
 
     let params = Arc::new(Te2Params::default());
     let shared = Arc::new(UiShared::default());
     let context: Arc<dyn GuiContext> = Arc::new(MockContext);
 
+    if overlay {
+        // Give the wear bar something to show.
+        params.tape_age.store(0.37, std::sync::atomic::Ordering::Relaxed);
+    }
+
     let mut harness = egui_kittest::Harness::builder()
         .with_size(egui::vec2(1080.0, 560.0))
         .build_ui(move |ui| {
             let setter = ParamSetter::new(&*context);
-            te2_plugin::ui::draw_for_snapshot(ui, &setter, &params, &shared, 0.7);
+            te2_plugin::ui::draw_for_snapshot(ui, &setter, &params, &shared, 0.7, overlay);
         });
 
     harness.run();

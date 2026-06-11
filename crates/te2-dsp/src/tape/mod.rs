@@ -2,8 +2,11 @@ pub mod heads_eq;
 pub mod magnetics;
 pub mod noise;
 pub mod reel;
+pub mod stock;
 pub mod transport;
 pub mod wow_flutter;
+
+pub use stock::{StockProfile, TapeStock};
 
 /// IEC cassette tape types.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
