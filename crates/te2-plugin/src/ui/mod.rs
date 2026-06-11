@@ -82,17 +82,21 @@ fn draw_panel(
     shared: &UiShared,
     state: &mut EditorState,
 ) {
-    let scale = params.ui_scale.load(Ordering::Relaxed).clamp(0.5, 2.0);
-    if (state.applied_scale - scale).abs() > 1e-3 {
+    let preferred = params.ui_scale.load(Ordering::Relaxed).clamp(0.5, 2.0);
+    if (state.applied_scale - preferred).abs() > 1e-3 {
         let want = (
-            (CANVAS.x * scale).round() as u32,
-            (CANVAS.y * scale).round() as u32,
+            (CANVAS.x * preferred).round() as u32,
+            (CANVAS.y * preferred).round() as u32,
         );
         if params.editor_state.size() != want {
             params.editor_state.set_requested_size(want);
         }
-        state.applied_scale = scale;
+        state.applied_scale = preferred;
     }
+    // The transform follows the window the host actually gave us, never the
+    // wish: if a resize is refused, the UI stays 1:1 and reachable instead
+    // of scaling controls out past the window edge.
+    let scale = (params.editor_state.size().0 as f32 / CANVAS.x).clamp(0.25, 3.0);
 
     let ctx = ui.ctx().clone();
     let panel_id = egui::Id::new("te2-panel");
@@ -104,6 +108,9 @@ fn draw_panel(
         .order(egui::Order::Middle)
         .fixed_pos(pos2(0.0, 0.0))
         .show(&ctx, |ui| {
+            // Clip rects are layer-local (pre-transform): at scales below 1
+            // the window is smaller than the canvas and would cut it off.
+            ui.set_clip_rect(Rect::from_min_size(pos2(0.0, 0.0), CANVAS));
             draw_panel_inner(ui, setter, params, shared, state, scale);
         });
 }
@@ -836,6 +843,8 @@ fn draw_settings_overlay(
         .order(egui::Order::Foreground)
         .fixed_pos(pos2(0.0, 0.0))
         .show(&ctx, |ui| {
+            // Clip rects are layer-local (pre-transform); cover the canvas.
+            ui.set_clip_rect(Rect::from_min_size(pos2(0.0, 0.0), CANVAS));
             // Scrim: dims the faceplate, swallows its input, closes on click.
             let scrim = ui.allocate_rect(full, Sense::click());
             ui.painter()

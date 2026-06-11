@@ -20,6 +20,7 @@ authors = ["naturarum"]
 # pointer event. See vendor/baseview/src/macos/view.rs.
 [patch.crates-io]
 baseview = { path = "vendor/baseview" }
+nice-plug-egui = { path = "vendor/nice-plug-egui" }
 
 [profile.release]
 lto = "thin"

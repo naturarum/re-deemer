@@ -45,6 +45,17 @@ fn main() {
         params.tape_age.store(0.37, std::sync::atomic::Ordering::Relaxed);
     }
     params.ui_scale.store(scale, std::sync::atomic::Ordering::Relaxed);
+    if (scale - 1.0).abs() > 1e-3 {
+        // The panel transform follows the window size, so mirror it here.
+        let scaled = nice_plug_egui::EguiState::from_size(
+            (1080.0 * scale).round() as u32,
+            (560.0 * scale).round() as u32,
+        );
+        nice_plug::params::persist::PersistentField::set(
+            &params.editor_state,
+            Arc::try_unwrap(scaled).expect("fresh state"),
+        );
+    }
     // Optional spool position, in seconds of tape footage (0..1800 = side A).
     if let Some(f) = std::env::args()
         .find_map(|a| a.strip_prefix("footage=").and_then(|s| s.parse::<f32>().ok()))
