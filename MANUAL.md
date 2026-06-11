@@ -1,6 +1,6 @@
 # RE-DEEMER — User Manual
 
-**Cassette tape echo · v1.0.1 · macOS (VST3 / CLAP / AU) · free**
+**Cassette tape echo · v1.0.2 · macOS (VST3 / CLAP / AU) · free**
 
 RE-DEEMER is a software realization of the Space Case TE-2, a cassette-based
 tape echo instrument designed around 2018–2019 that was pre-ordered by many
@@ -105,10 +105,9 @@ Things that matter about this topology:
 
 | Control | What it does |
 | --- | --- |
-| **DIV + SYNC** | Cycle rate division and host-clock sync. With SYNC on, the step rate follows the DAW tempo and — while the transport rolls — the steps are phase-locked to the playhead, so the cycle lands on the grid and follows loops and jumps. |
-| **LOOP + SYNC** | Loop length for LOOP mode; SYNC snaps to beats. |
-| **DRIFT ×3** | Per-set glide time between positions, 0–14 s. |
-| **CYCLE + CYC** | Cycle speed (8 s/step → 4,000 steps/s) and run switch. |
+| **LOOP + SYNC** | Loop length for LOOP mode; SYNC snaps it to whole beats. |
+| **DRIFT ×3** | Per-set glide time between positions, 0–14 s — each knob wears its set's cap color (white / gray / black). |
+| **The cycle group: 1-8 · DIV · CYCLE, with SYNC + CYC beneath** | 1-8 sets how many positions the cycle rotates through. CYC runs it. Free-running, CYCLE sets the speed (8 s/step → 4,000 steps/s — audio-rate stepping turns the faders into a waveform). Press **SYNC** to lock to the host clock: the rate becomes the DAW tempo divided by **DIV** (1/1 → 1/32), phase-locked to the playhead while the transport rolls, so steps land on the grid and follow loops, jumps and tempo changes. The knob that isn't driving (CYCLE when synced, DIV when free) dims. |
 
 ### TAPE & MACHINE overlay (click the RE-2 logo or SETUP)
 

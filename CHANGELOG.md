@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.0.2 — 2026-06-11
 
 - **Alignment & symmetry pass:** the 1-8 buttons and transport row are
   centered on the cassette's axis (the transport spans exactly the window's

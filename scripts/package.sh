@@ -20,16 +20,31 @@ echo "== AUv2 wrapper =="
 if [ ! -d wrapper-au/clap-wrapper ]; then
     git clone --depth 1 https://github.com/free-audio/clap-wrapper wrapper-au/clap-wrapper
 fi
+# The AUv2 build helper generates its registration plist by loading the
+# INSTALLED CLAP — install the one we just built first, or the component
+# inherits a stale version. And build the wrapper fresh: incremental builds
+# have bitten before.
+rm -rf ~/Library/Audio/Plug-Ins/CLAP/RE-DEEMER.clap
+cp -R target/bundled/RE-DEEMER.clap ~/Library/Audio/Plug-Ins/CLAP/
+rm -rf wrapper-au/build
 cmake -B wrapper-au/build -S wrapper-au -DCMAKE_BUILD_TYPE=Release >/dev/null
 cmake --build wrapper-au/build >/dev/null
 
 # The v1.0.0 zip shipped a component whose Info.plist had lost its
 # AudioComponents block (clap-wrapper regenerates it only on first build).
-# Never let that leave the building again.
-if ! plutil -extract AudioComponents json -o /dev/null \
-    "wrapper-au/build/RE-DEEMER.component/Contents/Info.plist" 2>/dev/null; then
+# Never let that leave the building again — and check the version integer
+# actually matches this release (the helper once shipped a stale one).
+AU_PLIST="wrapper-au/build/RE-DEEMER.component/Contents/Info.plist"
+if ! plutil -extract AudioComponents json -o /dev/null "$AU_PLIST" 2>/dev/null; then
     echo "ERROR: AU Info.plist is missing AudioComponents — the component" >&2
     echo "       would not register on user machines. Aborting." >&2
+    exit 1
+fi
+EXPECTED_AUVER=$(echo "$VERSION" | awk -F. '{ print $1*65536 + $2*256 + $3 }')
+ACTUAL_AUVER=$(plutil -extract AudioComponents.0.version raw -o - - < "$AU_PLIST")
+if [ "$ACTUAL_AUVER" != "$EXPECTED_AUVER" ]; then
+    echo "ERROR: AU component version is $ACTUAL_AUVER, expected $EXPECTED_AUVER" >&2
+    echo "       (v${VERSION}). Stale build helper output? Aborting." >&2
     exit 1
 fi
 
