@@ -35,7 +35,7 @@ Everything from a clean checkout to a published, notarized release.
    gh repo create re-deemer --public --source . --push
    ```
 3. Enable the website: repo → Settings → Pages → Source: **Deploy from a
-   branch** → branch `main`, folder **/site**.
+   branch** → branch `main`, folder **/docs**.
 4. Fill the placeholders in `site/index.html` (GitHub repo path ×3 and the
    PayPal handle), commit, push.
 

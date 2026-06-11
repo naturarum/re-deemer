@@ -8,9 +8,11 @@
 # newest version with zero site edits.
 
 name: release
+# Manual trigger: the primary flow is local (signed + notarized, see
+# README-RELEASING.md). Run this from the Actions tab if you ever need an
+# unsigned CI build (e.g. testing the pipeline).
 on:
-  push:
-    tags: ["v*"]
+  workflow_dispatch:
 
 jobs:
   macos:
