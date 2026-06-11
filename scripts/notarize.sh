@@ -40,10 +40,27 @@ for b in "${BUNDLES[@]}"; do
 done
 
 echo "== rebuild distribution zips (now notarized) =="
+# Use Info-ZIP (`zip`), NOT `ditto`: ditto stores macOS extended attributes
+# (incl. the un-strippable com.apple.provenance) as AppleDouble ._* entries,
+# and plain `unzip` materializes those as junk files INSIDE the signed
+# bundles — codesign then reports "a sealed resource is missing or invalid".
+# Nothing in the bundles needs xattrs (signature and stapler ticket are
+# regular files), and zip stores none, so the archive extracts clean with
+# Archive Utility, ditto and unzip alike.
 VERSION=$(grep -m1 '^version' Cargo.toml | sed 's/.*"\(.*\)"/\1/')
 rm -f dist/RE-DEEMER-macos.zip "dist/RE-DEEMER-${VERSION}-macos.zip"
-(cd dist && ditto -c -k --keepParent "RE-DEEMER" "RE-DEEMER-macos.zip")
+(cd dist && zip -qry "RE-DEEMER-macos.zip" "RE-DEEMER")
 cp dist/RE-DEEMER-macos.zip "dist/RE-DEEMER-${VERSION}-macos.zip"
+
+echo "== verify the zip round-trips with a clean seal =="
+rm -rf dist/.verify && mkdir dist/.verify
+(cd dist/.verify && unzip -qq ../RE-DEEMER-macos.zip)
+for b in dist/.verify/RE-DEEMER/RE-DEEMER.{clap,vst3,component}; do
+    codesign --verify --strict "$b" || { echo "ERROR: seal broken after zip: $b"; exit 1; }
+    xcrun stapler validate "$b" >/dev/null || { echo "ERROR: ticket missing after zip: $b"; exit 1; }
+    echo "  zip round-trip OK: $b"
+done
+rm -rf dist/.verify
 
 echo
 echo "done — notarized archives:"
