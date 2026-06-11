@@ -1,5 +1,5 @@
 //! The RE-DEEMER panel: a vector tribute to the Space Case TE-2 faceplate.
-//! Oiled maple frame, black panel, cassette window with a live transport,
+//! Dark walnut frame, black panel, cassette window with a live transport,
 //! VU, the 21-fader position matrix, and every control bound to its
 //! parameter — with hover help on all of them.
 
@@ -75,12 +75,40 @@ fn draw_panel(
     let full = ui.max_rect();
     let painter = ui.painter().clone();
 
-    // Wood frame + faceplate.
+    // Wood frame + faceplate. The grain is a handful of deterministic
+    // streaks on the visible border strips — texture without textures.
     painter.rect_filled(full, 0.0, theme::WOOD);
+    let fract = |x: f32| x - x.floor();
+    for i in 0..34u32 {
+        let t = fract(i as f32 * 0.6180340);
+        let (color, alpha) = if i % 3 == 0 {
+            (theme::WOOD_GRAIN_LIGHT, 90)
+        } else {
+            (theme::WOOD_GRAIN_DARK, 110)
+        };
+        let c = color.gamma_multiply(alpha as f32 / 255.0);
+        let w = 0.7 + 1.1 * fract(t * 7.13);
+        // Horizontal grain across the top and bottom rails…
+        let y_top = full.top() + 1.5 + t * 13.0;
+        let y_bot = full.bottom() - 1.5 - fract(t * 3.7) * 13.0;
+        let x0 = full.left() + fract(t * 11.3) * 140.0;
+        let x1 = full.right() - fract(t * 5.9) * 140.0;
+        painter.line_segment([pos2(x0, y_top), pos2(x1, y_top)], Stroke::new(w, c));
+        painter.line_segment([pos2(x0, y_bot), pos2(x1, y_bot)], Stroke::new(w, c));
+        // …and vertical grain down the side cheeks.
+        if i < 14 {
+            let x_l = full.left() + 1.5 + t * 13.0;
+            let x_r = full.right() - 1.5 - fract(t * 3.7) * 13.0;
+            let y0 = full.top() + fract(t * 9.1) * 90.0;
+            let y1 = full.bottom() - fract(t * 4.3) * 90.0;
+            painter.line_segment([pos2(x_l, y0), pos2(x_l, y1)], Stroke::new(w, c));
+            painter.line_segment([pos2(x_r, y0), pos2(x_r, y1)], Stroke::new(w, c));
+        }
+    }
     painter.rect_stroke(
-        full.shrink(2.0),
+        full.shrink(1.0),
         2.0,
-        Stroke::new(3.0, theme::WOOD_EDGE),
+        Stroke::new(2.0, theme::WOOD_EDGE),
         StrokeKind::Inside,
     );
     let panel = full.shrink(16.0);
@@ -92,16 +120,17 @@ fn draw_panel(
         StrokeKind::Inside,
     );
 
-    // Wordmarks. The RE-2 logo doubles as the settings latch.
+    // Wordmarks. The RE-2 logo doubles as the settings latch. Logo, VU and
+    // SETUP share one centerline (x = 993).
     painter.text(
-        pos2(1000.0, 36.0),
+        pos2(993.0, 36.0),
         Align2::CENTER_CENTER,
         "RE-2",
         FontId::monospace(22.0),
         theme::INK,
     );
     let logo = ui.allocate_rect(
-        Rect::from_center_size(pos2(1000.0, 35.0), vec2(76.0, 26.0)),
+        Rect::from_center_size(pos2(993.0, 35.0), vec2(76.0, 26.0)),
         Sense::click(),
     );
     if logo.clicked() {
@@ -135,16 +164,17 @@ fn draw_panel(
     );
     vu::draw(
         ui,
-        Rect::from_min_max(pos2(950.0, 50.0), pos2(1052.0, 118.0)),
+        Rect::from_min_max(pos2(942.0, 50.0), pos2(1044.0, 118.0)),
         shared.vu.load(Ordering::Relaxed),
     );
 
     let position = shared.position.load(Ordering::Relaxed);
 
     // --- 1-8 position buttons (click = select, hold = RES gate) ---
+    // Centered on the cassette's axis (x = 224), like the transport below.
     let mut any_held = false;
     for i in 0..8u8 {
-        let cx = 56.0 + i as f32 * 42.0;
+        let cx = 77.0 + i as f32 * 42.0;
         let center = pos2(cx, 324.0);
         widgets::led(ui, pos2(cx, 298.0), position == i + 1, theme::LED_RED);
         let rect = Rect::from_center_size(center, vec2(28.0, 28.0));
@@ -172,10 +202,10 @@ fn draw_panel(
     }
     shared.ui_gate.store(any_held, Ordering::Relaxed);
 
-    // --- Transport row ---
+    // --- Transport row: spans exactly the cassette window's width ---
     let ty = 474.0;
     let bsize = vec2(52.0, 32.0);
-    let bx = |i: f32| pos2(64.0 + i * 56.0, ty);
+    let bx = |i: f32| pos2(62.0 + i * 54.0, ty);
     let transport = params.transport_mode.value();
 
     let stop_on = params.stop.value();
@@ -294,23 +324,17 @@ fn draw_panel(
         "Mechanical pause: tape stops fast, speed setting retained.",
     );
 
-    // --- Top knob row ---
+    // --- Top knob row. The whole cycle group lives together at the right
+    // end: 1-8 length, DIV, CYCLE, with SYNC and CYC directly beneath.
+    // With SYNC on the rate comes from the host tempo via DIV, so CYCLE
+    // dims; free-running, DIV dims instead.
     let ky = 66.0;
-    let kx = |i: f32| pos2(446.0 + i * 64.0, ky);
-    widgets::knob(
-        ui,
-        setter,
-        &params.rate_div,
-        kx(0.0),
-        17.0,
-        "DIV",
-        "Cycle rate division when SYNC is on (1/1 down to 1/32).",
-    );
+    let synced = params.rate_sync.value();
     widgets::knob(
         ui,
         setter,
         &params.loop_len,
-        kx(1.0),
+        pos2(466.0, ky),
         17.0,
         "LOOP",
         "Loop length for LOOP mode, in seconds of tape footage. \
@@ -320,59 +344,78 @@ fn draw_panel(
         ui,
         setter,
         &params.white_drift,
-        kx(3.0),
+        pos2(562.0, ky),
         17.0,
         "DRIFT",
         Some(theme::CAP_WHITE),
+        false,
         "Glide time between positions for the White set (0-14 s).",
     );
     widgets::knob_capped(
         ui,
         setter,
         &params.gray_drift,
-        kx(4.0),
+        pos2(626.0, ky),
         17.0,
         "DRIFT",
         Some(theme::CAP_GRAY),
+        false,
         "Glide time between positions for the Gray set (0-14 s).",
     );
     widgets::knob_capped(
         ui,
         setter,
         &params.black_drift,
-        kx(5.0),
+        pos2(690.0, ky),
         17.0,
         "DRIFT",
         Some(theme::CAP_BLACK),
+        false,
         "Glide time between positions for the Black set (0-14 s).",
     );
-    widgets::knob(
+    widgets::rotary_selector(
+        ui,
+        setter,
+        &params.cycle_len,
+        pos2(786.0, ky),
+        18.0,
+        8,
+        "1-8",
+        "How many positions the cycle rotates through. The Anomaly fires \
+         on the final step.",
+    );
+    widgets::knob_capped(
+        ui,
+        setter,
+        &params.rate_div,
+        pos2(850.0, ky),
+        17.0,
+        "DIV",
+        None,
+        !synced,
+        "Cycle rate as a host-tempo division, 1/1 down to 1/32 — active \
+         when SYNC is on.",
+    );
+    widgets::knob_capped(
         ui,
         setter,
         &params.cycle_rate,
-        kx(7.0),
+        pos2(914.0, ky),
         17.0,
         "CYCLE",
-        "Cycle speed: from 8 seconds per step up to 4,000 steps per second — \
-         audio-rate stepping turns the faders into a waveform.",
+        None,
+        synced,
+        "Free-running cycle speed: 8 seconds per step up to 4,000 steps per \
+         second — audio-rate stepping turns the faders into a waveform. \
+         With SYNC on, the rate is the host tempo divided by DIV instead.",
     );
 
     let small = vec2(34.0, 16.0);
     widgets::toggle_button(
         ui,
         setter,
-        &params.rate_sync,
-        Rect::from_center_size(pos2(446.0, 112.0), small),
-        "SYNC",
-        Some(theme::LED_RED),
-        "Lock the cycle to the host clock: rate from tempo and DIV, steps \
-         phase-locked to the playhead while the transport rolls.",
-    );
-    widgets::toggle_button(
-        ui,
-        setter,
         &params.loop_sync,
-        Rect::from_center_size(pos2(510.0, 112.0), small),
+        Rect::from_center_size(pos2(466.0, 112.0), small),
         "SYNC",
         Some(theme::LED_RED),
         "Snap the loop length to whole beats of the host tempo.",
@@ -380,8 +423,18 @@ fn draw_panel(
     widgets::toggle_button(
         ui,
         setter,
+        &params.rate_sync,
+        Rect::from_center_size(pos2(850.0, 112.0), small),
+        "SYNC",
+        Some(theme::LED_RED),
+        "Lock the cycle to the host clock: rate = tempo divided by DIV, \
+         steps phase-locked to the playhead while the transport rolls.",
+    );
+    widgets::toggle_button(
+        ui,
+        setter,
         &params.cycle_run,
-        Rect::from_center_size(pos2(894.0, 112.0), small),
+        Rect::from_center_size(pos2(914.0, 112.0), small),
         "CYC",
         Some(theme::LED_RED),
         "Run the cycle: rotate through positions 1 to the 1-8 limit.",
@@ -441,24 +494,13 @@ fn draw_panel(
         Some(theme::LED_RED),
         "Engage the Black set.",
     );
-    widgets::rotary_selector(
-        ui,
-        setter,
-        &params.cycle_len,
-        pos2(830.0, 66.0),
-        18.0,
-        8,
-        "1-8",
-        "How many positions the cycle rotates through. The Anomaly fires \
-         on the final step.",
-    );
 
     // --- Fader matrix: positions 2-8 x White/Gray/Black ---
     let whites = params.white_faders();
     let grays = params.gray_faders();
     let blacks = params.black_faders();
     for col in 0..7usize {
-        let cx = 462.0 + col as f32 * 90.0;
+        let cx = 466.0 + col as f32 * 92.0;
         widgets::label(ui, pos2(cx, 198.0), &format!("{}", col + 2), 9.5, theme::INK);
         widgets::fader(
             ui,
@@ -490,8 +532,8 @@ fn draw_panel(
         widgets::led(ui, pos2(cx, 322.0), position == (col + 2) as u8, theme::LED_RED);
     }
     // Position 1 = the panel itself.
-    widgets::led(ui, pos2(436.0, 322.0), position == 1, theme::LED_RED);
-    widgets::label(ui, pos2(436.0, 198.0), "1", 9.5, theme::INK_DIM);
+    widgets::led(ui, pos2(440.0, 322.0), position == 1, theme::LED_RED);
+    widgets::label(ui, pos2(440.0, 198.0), "1", 9.5, theme::INK_DIM);
 
     // --- Primary controls ---
     let ay = 366.0;
@@ -608,7 +650,7 @@ fn draw_panel(
     // --- Right block: two rows aligned with the primary knob rows ---
     let setup = widgets::action_button(
         ui,
-        Rect::from_center_size(pos2(1008.0, 144.0), vec2(46.0, 22.0)),
+        Rect::from_center_size(pos2(993.0, 144.0), vec2(46.0, 22.0)),
         "SETUP",
         state.settings_open,
         Some(theme::LED_YELLOW),
@@ -622,7 +664,7 @@ fn draw_panel(
         ui,
         setter,
         &params.anomaly_pol,
-        pos2(854.0, ay),
+        pos2(862.0, ay),
         ["-", "OFF", "+"],
         "Anomaly polarity: the tape hiccup bends pitch down (-) or up (+). \
          Middle = off.",
@@ -631,7 +673,7 @@ fn draw_panel(
         ui,
         setter,
         &params.anomaly,
-        pos2(926.0, ay),
+        pos2(944.0, ay),
         15.0,
         "ANMLY",
         "Anomaly amount: a single speed blip on the cycle's final step, from \
@@ -641,7 +683,7 @@ fn draw_panel(
         ui,
         setter,
         &params.motor_kill,
-        Rect::from_center_size(pos2(1000.0, ay), vec2(36.0, 22.0)),
+        Rect::from_center_size(pos2(1026.0, ay), vec2(36.0, 22.0)),
         "MTR",
         Some(theme::LED_RED),
         "Hold: kill the motor — pitch drags down to a dead stop. Release to \
@@ -652,7 +694,7 @@ fn draw_panel(
         ui,
         setter,
         &params.tape_type,
-        pos2(854.0, by),
+        pos2(862.0, by),
         ["NM", "CH", "MT"],
         "The deck's tape-type setting (bias/EQ): I Normal (warm, saturates \
          early), II Chrome (cleaner), IV Metal (most headroom). Picking a \
@@ -667,10 +709,10 @@ fn draw_panel(
         te2_dsp::tape::TapeKind::IV => crate::params::TapeType::Metal,
     };
     let mismatch = params.tape_type.value() != native;
-    widgets::led(ui, pos2(816.0, by), mismatch, theme::LED_YELLOW);
+    widgets::led(ui, pos2(824.0, by), mismatch, theme::LED_YELLOW);
     if mismatch {
         ui.allocate_rect(
-            Rect::from_center_size(pos2(816.0, by), vec2(12.0, 12.0)),
+            Rect::from_center_size(pos2(824.0, by), vec2(12.0, 12.0)),
             Sense::hover(),
         )
         .on_hover_text(format!(
@@ -683,7 +725,7 @@ fn draw_panel(
         ui,
         setter,
         &params.tape_in,
-        pos2(926.0, by),
+        pos2(944.0, by),
         15.0,
         "TAPE IN",
         "How hot the signal hits the tape. Drives saturation and compression; \
@@ -693,7 +735,7 @@ fn draw_panel(
         ui,
         setter,
         &params.out_level,
-        pos2(1000.0, by),
+        pos2(1026.0, by),
         15.0,
         "OUT",
         "Output trim, -24 to +6 dB.",

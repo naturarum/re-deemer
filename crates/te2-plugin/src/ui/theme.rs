@@ -3,8 +3,11 @@
 
 use egui::Color32;
 
-pub const WOOD: Color32 = Color32::from_rgb(0xC8, 0xA8, 0x78);
-pub const WOOD_EDGE: Color32 = Color32::from_rgb(0x8A, 0x6E, 0x48);
+// Dark oiled walnut, not blonde maple: base, grain streaks, edge shadow.
+pub const WOOD: Color32 = Color32::from_rgb(0x6E, 0x4E, 0x34);
+pub const WOOD_GRAIN_DARK: Color32 = Color32::from_rgb(0x55, 0x3A, 0x26);
+pub const WOOD_GRAIN_LIGHT: Color32 = Color32::from_rgb(0x86, 0x62, 0x42);
+pub const WOOD_EDGE: Color32 = Color32::from_rgb(0x3E, 0x2B, 0x1C);
 pub const PANEL: Color32 = Color32::from_rgb(0x12, 0x12, 0x13);
 pub const PANEL_EDGE: Color32 = Color32::from_rgb(0x2A, 0x2A, 0x2C);
 pub const INK: Color32 = Color32::from_rgb(0xD8, 0xD4, 0xCC);

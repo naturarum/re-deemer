@@ -99,11 +99,14 @@ pub fn knob<P: Param>(
     text: &str,
     help: &str,
 ) {
-    knob_capped(ui, setter, param, center, radius, text, None, help);
+    knob_capped(ui, setter, param, center, radius, text, None, false, help);
 }
 
 /// Rotary knob with a colored cap (e.g. the per-set DRIFT knobs wear their
-/// set's fader-cap color so they can be told apart at a glance).
+/// set's fader-cap color so they can be told apart at a glance), and an
+/// optionally dimmed label for knobs that are currently out of the signal
+/// path (e.g. CYCLE while SYNC supplies the rate).
+#[allow(clippy::too_many_arguments)]
 pub fn knob_capped<P: Param>(
     ui: &mut Ui,
     setter: &ParamSetter,
@@ -112,6 +115,7 @@ pub fn knob_capped<P: Param>(
     radius: f32,
     text: &str,
     cap: Option<Color32>,
+    dim_label: bool,
     help: &str,
 ) {
     let rect = Rect::from_center_size(center, Vec2::splat(radius * 2.2));
@@ -170,7 +174,7 @@ pub fn knob_capped<P: Param>(
         pos2(center.x, center.y + radius + 11.0),
         text,
         9.5,
-        theme::INK,
+        if dim_label { theme::INK_DIM } else { theme::INK },
     );
     value_tip(ui, &response, param, center, -(radius + 14.0));
     help_tip(response, param, help);

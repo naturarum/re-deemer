@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+- **Alignment & symmetry pass:** the 1-8 buttons and transport row are
+  centered on the cassette's axis (the transport spans exactly the window's
+  width); the fader matrix, VU, RE-2 logo, SETUP and the right block share
+  standardized margins and a common right edge; the wordmark/VU column sits
+  on one centerline.
+- **The cycle group is now one group.** 1-8 length, DIV and CYCLE sit
+  together at the right end of the top row with SYNC and CYC directly
+  beneath. SYNC locks the cycle to the host clock (tempo ÷ DIV,
+  phase-locked to the playhead); the knob that isn't driving — CYCLE when
+  synced, DIV when free — renders dimmed so the mode is visible at a
+  glance.
+- **Dark walnut frame** with subtle procedural grain (a few dozen vector
+  strokes — no textures, no extra rendering cost).
+
 ## 1.0.1 — 2026-06-11
 
 **If you use the AU in Logic or GarageBand, update: the v1.0.0 download's
