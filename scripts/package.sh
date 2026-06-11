@@ -23,6 +23,16 @@ fi
 cmake -B wrapper-au/build -S wrapper-au -DCMAKE_BUILD_TYPE=Release >/dev/null
 cmake --build wrapper-au/build >/dev/null
 
+# The v1.0.0 zip shipped a component whose Info.plist had lost its
+# AudioComponents block (clap-wrapper regenerates it only on first build).
+# Never let that leave the building again.
+if ! plutil -extract AudioComponents json -o /dev/null \
+    "wrapper-au/build/RE-DEEMER.component/Contents/Info.plist" 2>/dev/null; then
+    echo "ERROR: AU Info.plist is missing AudioComponents — the component" >&2
+    echo "       would not register on user machines. Aborting." >&2
+    exit 1
+fi
+
 echo "== staging =="
 STAGE="dist/RE-DEEMER"
 rm -rf dist && mkdir -p "$STAGE"
