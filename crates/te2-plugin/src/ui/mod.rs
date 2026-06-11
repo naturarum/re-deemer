@@ -322,12 +322,14 @@ fn draw_panel_inner(
         (
             WindMode::Rewind,
             "RW",
-            "Hold: reverse playback (in PLAY mode), speed follows TIME.",
+            "Hold: fast reverse playback (~12x, in PLAY mode) — the spools \
+             wind back and everything on tape screams past backwards.",
         ),
         (
             WindMode::FastForward,
             "FF",
-            "Hold: high-speed playback (in PLAY mode), speed follows TIME.",
+            "Hold: fast-wind playback (~12x, in PLAY mode) — a real deck \
+             winds a side in a couple of minutes, and so does this one.",
         ),
     ]
     .into_iter()

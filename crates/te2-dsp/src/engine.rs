@@ -1289,6 +1289,22 @@ mod tests {
         let f = e.tape_footage_seconds();
         assert!((0.9..1.1).contains(&f), "1 s rolled should be ~1 s of tape: {f:.3}");
 
+        // Fast-forward winds like a real deck: ~12x nominal, so 2 s of FF
+        // moves a visible chunk of the spool.
+        e.set_params(&EngineParams {
+            transport: TransportKind::Play,
+            wind: Wind::FastForward,
+            ..clinical(0.35, 0.0)
+        });
+        for _ in 0..(2 * 48_000) {
+            e.process(0.0, 0.0);
+        }
+        let after_ff = e.tape_footage_seconds();
+        assert!(
+            after_ff > f + 15.0,
+            "2 s of FF should wind >15 s of tape: {after_ff:.1}"
+        );
+
         // Rewind runs it backwards.
         e.set_params(&EngineParams {
             transport: TransportKind::Play,
@@ -1299,7 +1315,7 @@ mod tests {
             e.process(0.0, 0.0);
         }
         assert!(
-            e.tape_footage_seconds() < f,
+            e.tape_footage_seconds() < after_ff,
             "rewind should wind footage back: {:.3}",
             e.tape_footage_seconds()
         );

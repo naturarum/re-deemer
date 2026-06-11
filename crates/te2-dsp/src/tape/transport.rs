@@ -23,9 +23,10 @@ pub enum Mechanism {
     FastForwarding,
 }
 
-/// Speed multipliers for held wind transports (the PDF: "proportionally
-/// faster than playback speed").
-const WIND_MULT: f64 = 4.0;
+/// Speed multiplier for held wind transports (the reference: "proportionally
+/// faster than playback speed"). Real decks fast-wind a C60 side in a minute
+/// or two — 12x nominal does that here, and the spools visibly fly.
+const WIND_MULT: f64 = 12.0;
 
 pub struct Motor {
     sample_rate: f64,
@@ -161,7 +162,9 @@ impl Motor {
             _ => 1.0,
         };
 
-        (self.speed * modulation * self.kill_gain * self.pause_gain * dir).clamp(-12.0, 12.0)
+        // The clamp caps winding at ~24x nominal no matter how fast TIME is
+        // set — about what a real mechanism manages flat out.
+        (self.speed * modulation * self.kill_gain * self.pause_gain * dir).clamp(-24.0, 24.0)
     }
 
     pub fn reset(&mut self) {

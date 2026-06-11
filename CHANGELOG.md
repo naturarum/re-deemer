@@ -16,6 +16,11 @@
 - **SETUP overlay re-laid on a strict three-column grid** — stocks |
   budget + machine | aging + scale — with section headers on shared rows
   and every group centered on its column.
+- **RW/FF now wind like a real deck.** Held wind was only 4x play speed, so
+  the spools barely moved even fast-forwarding (a real mechanism winds a
+  C60 side in a minute or two). Wind is now ~12x nominal (capped ~24x at
+  fast TIME settings) — the spools visibly fly, and the shuttle sound got
+  correspondingly wilder.
 - The website's download button now serves the *versioned* archive
   (`RE-DEEMER-x.y.z-macos.zip`) so downloads identify their version; the
   stable link remains for old bookmarks.
