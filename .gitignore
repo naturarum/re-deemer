@@ -4,3 +4,6 @@
 /wrapper-au/build
 /wrapper-au/clap-wrapper
 .DS_Store
+CLAUDE.md
+CLAUDE.local.md
+.claude/
