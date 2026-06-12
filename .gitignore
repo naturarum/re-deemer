@@ -7,7 +7,4 @@
 CLAUDE.md
 CLAUDE.local.md
 .claude/
-/rack/Rack-SDK
-/rack/build
-/rack/dist
-/rack/plugin.dylib
+/rack/
