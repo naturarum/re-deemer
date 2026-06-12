@@ -12,7 +12,7 @@ free, for everyone who waited.
 
 **Formats:** VST3 · CLAP · AUv2 (via clap-wrapper). macOS universal
 (signed & notarized), Windows and Linux (CI-built each release). A
-**VCV Rack module** is in development in [rack/](rack/). Built in Rust on
+**VCV Rack module** is in development separately. Built in Rust on
 [nice-plug](https://codeberg.org/RustAudio/nice-plug).
 
 ## What's inside
