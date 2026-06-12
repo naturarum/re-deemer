@@ -23,7 +23,7 @@ ABI over `Te2Engine`:
   set at control rate (every N samples)
 - `te2_eject`, `te2_age`, `te2_set_age`, `te2_footage_seconds`,
   `te2_vu`, `te2_motor_speed`, `te2_position`
-- builds as `staticlib`; `cbindgen` generates `te2.h`
+- builds as `staticlib`; `te2.h` is maintained by hand (simpler than cbindgen for one struct), ABI-versioned
 
 The Rack plugin is a thin C++ shim (Rack SDK, GPLv3-compatible — our ISC
 core is fine) linking `libte2_capi.a` per platform. The Makefile drives
@@ -85,7 +85,12 @@ LOOP (trigger toggles loop mode)
 
 ## Phases
 
-   TIME/FDBK knobs work. *Proof of life.*
+1. **Bridge + skeleton** — ✅ DONE (June 2026). `te2-capi` staticlib with a
+   hand-maintained `te2.h` (ABI-versioned, null-safe, echo-through-the-
+   boundary test), `rack/` plugin builds against the Rack 2.6 SDK with the
+   Makefile driving cargo, module loads and instantiates in Rack, tape echo
+   core params wired, wear persists in the patch, `.vcvplugin` packages.
+   Placeholder walnut panel.
 2. **Full param surface** — all knobs/switches/faders, context menu,
    state save/load incl. wear.
 3. **Patchpoints** — jack field + the four DSP work items above.
