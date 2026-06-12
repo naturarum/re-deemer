@@ -1,0 +1,13 @@
+[package]
+name = "te2-capi"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# The C ABI over te2-dsp, for hosts that aren't Rust: the VCV Rack module
+# links this as a static library (and a future AUv3 wrapper could too).
+[lib]
+crate-type = ["staticlib", "rlib"]
+
+[dependencies]
+te2-dsp = { path = "../te2-dsp" }

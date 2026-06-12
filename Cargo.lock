@@ -3350,6 +3350,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "te2-capi"
+version = "1.0.3"
+dependencies = [
+ "te2-dsp",
+]
+
+[[package]]
 name = "te2-dsp"
 version = "1.0.3"
 dependencies = [

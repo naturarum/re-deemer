@@ -4,6 +4,7 @@ members = [
     "crates/te2-dsp",
     "crates/te2-render",
     "crates/te2-plugin",
+    "crates/te2-capi",
     "xtask",
 ]
 
