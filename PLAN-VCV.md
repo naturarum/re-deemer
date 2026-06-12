@@ -91,9 +91,14 @@ LOOP (trigger toggles loop mode)
    Makefile driving cargo, module loads and instantiates in Rack, tape echo
    core params wired, wear persists in the patch, `.vcvplugin` packages.
    Placeholder walnut panel.
-2. **Full param surface** — all knobs/switches/faders, context menu,
-   state save/load incl. wear.
-3. **Patchpoints** — jack field + the four DSP work items above.
+2. **Full param surface** — ✅ DONE (June 2026). Every control on the
+   panel, machine room in the context menu, wear + machine state persist
+   in the patch.
+3. **Patchpoints** — ✅ DONE (June 2026). All hardware CV ins (7-input
+   attenuverted mod row + LOOP trigger + front five incl. tap tempo), the
+   WHITE/GRAY/BLACK Set CV outs + EOC trigger, and the Rack extras
+   (1V/oct tape speed, CLOCK external stepping, POS CV/gate). DSP items
+   1-4 all landed in te2-dsp; C ABI at v2.
 4. **Panel art & cassette widget** — the lovable part.
 5. **Beta** — self-hosted `.vcvplugin` for mac (arm+x64), Windows, Linux
    from GitHub releases (forces the Windows/Linux te2-dsp builds — already
