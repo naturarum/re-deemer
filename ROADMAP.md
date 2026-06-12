@@ -140,10 +140,3 @@ is a separate effort:
   reimagined as internal mod routing since plugins have no CV jacks.
 - Tap-tempo / footswitch-style step advance mapping.
 
----
-
-## 6. VCV Rack module
-
-Planned in full: see [PLAN-VCV.md](PLAN-VCV.md). One big module, hardware
-patchpoints + Rack extras, te2-dsp bridged over a C ABI, self-hosted beta
-then VCV Library.

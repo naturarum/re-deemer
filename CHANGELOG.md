@@ -1,12 +1,11 @@
 # Changelog
 
-## Unreleased
+## 1.0.4 — 2026-06-12
 
-- **Windows and Linux builds.** VST3 + CLAP for both, built and
-  clap-validated in CI on every release (the v1.0.3 archives are already
-  up). Unsigned and younger than the macOS builds — reports welcome.
-- VCV Rack module in development (separate project).
-
+- **Now on Windows and Linux.** VST3 + CLAP for both, built and
+  clap-validated in CI on every release. Unsigned and younger than the
+  macOS builds — reports welcome. The macOS build is unchanged from 1.0.3
+  (signed, notarized, universal, with the AU).
 
 ## 1.0.3 — 2026-06-12
 
