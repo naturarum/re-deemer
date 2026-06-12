@@ -85,7 +85,6 @@ LOOP (trigger toggles loop mode)
 
 ## Phases
 
-1. **Bridge + skeleton** — te2-capi, Rack plugin compiles, audio passes,
    TIME/FDBK knobs work. *Proof of life.*
 2. **Full param surface** — all knobs/switches/faders, context menu,
    state save/load incl. wear.
