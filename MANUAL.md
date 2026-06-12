@@ -1,6 +1,6 @@
 # RE-DEEMER — User Manual
 
-**Cassette tape echo · v1.0.3 · macOS (VST3 / CLAP / AU) · free**
+**Cassette tape echo · v1.0.3 · macOS / Windows / Linux (VST3 / CLAP, AU on macOS) · free**
 
 RE-DEEMER is a software realization of the Space Case TE-2, a cassette-based
 tape echo instrument designed around 2018–2019 that was pre-ordered by many
@@ -15,6 +15,8 @@ Everything follows from that.
 ---
 
 ## 1. Installation
+
+### macOS
 
 Unzip the archive and either run the included `install.sh` (double-click or
 run in Terminal), or copy by hand:
@@ -35,6 +37,27 @@ which also clears the quarantine flag.
 
 Then rescan plugins in your DAW. In Logic, the AU appears under
 **naturarum → RE-DEEMER** (MIDI-controlled effects).
+
+### Windows
+
+| File | Copy to |
+| --- | --- |
+| `RE-DEEMER.vst3` | `C:\Program Files\Common Files\VST3\` |
+| `RE-DEEMER.clap` | `C:\Program Files\Common Files\CLAP\` |
+
+Builds are unsigned; if SmartScreen objects, "More info → Run anyway" (or
+unblock the zip in its Properties). Windows builds are newer than the
+macOS ones — bug reports welcome.
+
+### Linux
+
+| File | Copy to |
+| --- | --- |
+| `RE-DEEMER.vst3` | `~/.vst3/` |
+| `RE-DEEMER.clap` | `~/.clap/` |
+
+Then rescan in your DAW (Bitwig, Reaper, Ardour…). Linux builds are newer
+than the macOS ones — bug reports welcome.
 
 ---
 

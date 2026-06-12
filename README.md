@@ -10,8 +10,9 @@ free, for everyone who waited.
 
 ![The RE-DEEMER panel](docs/panel.png)
 
-**Formats:** VST3 · CLAP · AUv2 (via clap-wrapper) — macOS universal
-(arm64 + x86_64), signed and notarized. Built in Rust on
+**Formats:** VST3 · CLAP · AUv2 (via clap-wrapper). macOS universal
+(signed & notarized), Windows and Linux (CI-built each release). A
+**VCV Rack module** is in development in [rack/](rack/). Built in Rust on
 [nice-plug](https://codeberg.org/RustAudio/nice-plug).
 
 ## What's inside
@@ -106,8 +107,9 @@ cargo run -p te2-plugin --release --features snapshot --bin te2-snapshot out.png
 - The `vst3` bindings are MIT/Apache-2.0, but distributing VST3 *binaries*
   involves Steinberg's VST3 licensing terms (or GPLv3). CLAP and AU carry no
   such strings.
-- Windows is expected to build from the same tree but is untested — reports
-  welcome.
+- Windows and Linux builds come from CI (`.github/workflows/
+  plugins-portable.yml`) and pass clap-validator there; they're younger
+  than the macOS builds — reports welcome.
 - `PRESETS.md` has 16 factory panel recipes; `ROADMAP.md` and `PLAN-VCV.md`
   are what's next.
 

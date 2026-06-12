@@ -12,10 +12,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>RE-DEEMER — free cassette tape echo (VST3 / CLAP / AU)</title>
-<meta name="description" content="RE-DEEMER is a free cassette tape echo plugin for macOS — a physical model of a cassette echo instrument that never shipped. VST3, CLAP, AU.">
+<title>RE-DEEMER — free cassette tape echo (VST3 / CLAP / AU · macOS / Windows / Linux)</title>
+<meta name="description" content="RE-DEEMER is a free cassette tape echo plugin — a physical model of a cassette echo instrument that never shipped. VST3, CLAP, AU. macOS, Windows, Linux. VCV Rack module in development.">
 <meta property="og:title" content="RE-DEEMER — free cassette tape echo">
-<meta property="og:description" content="A physical model of the cassette tape echo that never shipped. Free. VST3 / CLAP / AU, macOS.">
+<meta property="og:description" content="A physical model of the cassette tape echo that never shipped. Free. VST3 / CLAP / AU — macOS, Windows, Linux.">
 <meta property="og:image" content="https://naturarum.github.io/re-deemer/panel.png">
 <meta property="og:url" content="https://naturarum.github.io/re-deemer/">
 <style>
@@ -76,6 +76,7 @@
   .btn:hover { transform: translateY(-1px); }
   .btn-dl { background: var(--red); color: #fff; border-color: #a02016; }
   .btn-dl:hover { box-shadow: 0 0 24px rgba(232, 48, 32, .35); }
+  .btn-beta { background: #7c1f15; }
   .btn-tip { background: var(--panel); color: var(--cream); }
   .btn-tip:hover { box-shadow: 0 0 18px rgba(233, 223, 192, .12); }
   .relmeta { text-align: center; color: var(--ink-dim); font-size: 12px; letter-spacing: 1px; margin-bottom: 26px; }
@@ -134,16 +135,18 @@
   </svg>
 
   <h1>RE<span class="dash">-</span>DEEMER</h1>
-  <p class="tag">cassette tape echo · <em>the preorder, redeemed</em> · VST3 / CLAP / AU · macOS · free</p>
+  <p class="tag">cassette tape echo · <em>the preorder, redeemed</em> · VST3 / CLAP / AU · macOS / Windows / Linux · free</p>
 
   <div class="hero"><img src="panel.png" alt="The RE-DEEMER panel: cassette window with live spools, VU meter, 21-fader position matrix, transport buttons"></div>
   <p class="hero-cap">THE SPOOLS ARE REAL: TAPE FOOTAGE WINDS LEFT TO RIGHT OVER A 30-MINUTE SIDE, AND REWIND WINDS IT BACK.</p>
 
   <div class="buttons">
-    <a class="btn btn-dl" id="dl-btn" href="https://github.com/naturarum/re-deemer/releases/latest/download/RE-DEEMER-macos.zip">⬇&nbsp;&nbsp;DOWNLOAD FREE — macOS</a>
+    <a class="btn btn-dl" id="dl-mac" href="https://github.com/naturarum/re-deemer/releases/latest/download/RE-DEEMER-macos.zip">⬇&nbsp;&nbsp;macOS</a>
+    <a class="btn btn-dl btn-beta" id="dl-win" href="https://github.com/naturarum/re-deemer/releases/latest/download/RE-DEEMER-windows.zip">⬇&nbsp;&nbsp;WINDOWS</a>
+    <a class="btn btn-dl btn-beta" id="dl-lin" href="https://github.com/naturarum/re-deemer/releases/latest/download/RE-DEEMER-linux.zip">⬇&nbsp;&nbsp;LINUX</a>
     <a class="btn btn-tip" href="https://paypal.me/naturarerum">♥&nbsp;&nbsp;TIP JAR</a>
   </div>
-  <p class="relmeta"><b id="rel-tag">latest release</b> · notarized · universal (Apple silicon + Intel)</p>
+  <p class="relmeta"><b id="rel-tag">latest release</b> · free · macOS notarized &amp; universal · Windows/Linux fresh out of the lab</p>
   <p class="free">RE-DEEMER is free, forever. People waited years for this machine — they deserve to get it for nothing. If it earns a place in your music, the tip jar keeps the tape rolling.</p>
 </header>
 
@@ -186,13 +189,31 @@
 <hr class="tape">
 
 <section class="wrap">
+  <h2>For your eurorack</h2>
+  <p>RE-DEEMER is becoming a <b>VCV Rack module</b> — the same tape engine in
+  its semi-modular form, with the patchpoints the hardware promised: the
+  attenuverted modulation row, tap tempo, an external cycle clock, tape
+  speed at 1V/oct, and the White/Gray/Black fader rows as CV outputs that
+  sequence the rest of your rack. In development now.</p>
+  <div class="machine" style="margin-top:20px">
+    <img src="rack.png" alt="RE-DEEMER VCV Rack module — work in progress" loading="lazy">
+    <ul>
+      <li>One 56HP module: the whole instrument, live cassette window included.</li>
+      <li>Every hardware CV point, plus Rack-native extras.</li>
+      <li>The 21 faders double as three 8-step CV sequencers.</li>
+    </ul>
+  </div>
+</section>
+
+<hr class="tape">
+
+<section class="wrap">
   <h2>Get it</h2>
   <ul>
-    <li><a href="https://github.com/naturarum/re-deemer/releases/latest/download/RE-DEEMER-macos.zip">Download for macOS</a> — universal (Apple silicon + Intel), VST3 + CLAP + AU in one archive with the manual</li>
-    <li>Unzip, run <code>install.sh</code> (copies the plugins into place), rescan in your DAW</li>
-    <li>Builds are Developer ID signed and notarized — no security warnings</li>
+    <li><b>macOS</b> — universal (Apple silicon + Intel), VST3 + CLAP + AU, signed &amp; notarized. Unzip, run <code>install.sh</code>, rescan.</li>
+    <li><b>Windows / Linux</b> — VST3 + CLAP, fresh builds (newer than the macOS ones; reports welcome). Copy the bundles per the included INSTALL.txt.</li>
     <li>Read the <a href="https://github.com/naturarum/re-deemer/blob/main/MANUAL.md">manual</a> — or skim the recipes and just turn knobs</li>
-    <li>Requirements: macOS 10.13+, any DAW that hosts VST3, CLAP, or Audio Units</li>
+    <li>Requirements: any DAW that hosts VST3 or CLAP (or AU on macOS 10.13+)</li>
   </ul>
 </section>
 
@@ -212,8 +233,13 @@
     .then(r => r.json())
     .then(d => {
       if (d.tag_name) document.getElementById("rel-tag").textContent = d.tag_name;
-      const versioned = (d.assets || []).find(a => /RE-DEEMER-\d[\d.]*-macos\.zip/.test(a.name));
-      if (versioned) document.getElementById("dl-btn").href = versioned.browser_download_url;
+      const wire = (id, pat) => {
+        const a = (d.assets || []).find(x => pat.test(x.name));
+        if (a) document.getElementById(id).href = a.browser_download_url;
+      };
+      wire("dl-mac", /RE-DEEMER-\d[\d.]*-macos\.zip/);
+      wire("dl-win", /RE-DEEMER-\d[\d.]*-windows\.zip/);
+      wire("dl-lin", /RE-DEEMER-\d[\d.]*-linux\.zip/);
     })
     .catch(() => {});
 </script>

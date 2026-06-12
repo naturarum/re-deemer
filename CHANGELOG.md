@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- **Windows and Linux builds.** VST3 + CLAP for both, built and
+  clap-validated in CI on every release (the v1.0.3 archives are already
+  up). Unsigned and younger than the macOS builds — reports welcome.
+- VCV Rack module in development (in-repo under `rack/`).
+
+
 ## 1.0.3 — 2026-06-12
 
 - **FDBK now reaches 150%.** The old 110% ceiling left the loop gain barely
