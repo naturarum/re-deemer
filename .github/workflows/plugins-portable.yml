@@ -1,0 +1,95 @@
+# Windows + Linux builds of the DAW plugin (CLAP + VST3).
+#
+# Runs automatically when a release is published (the macOS assets come
+# from the local signed/notarized flow) and attaches its zips to that
+# release. Can also be dispatched manually with a tag, or with no tag to
+# just produce artifacts for inspection.
+
+name: plugins-portable
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to attach assets to (empty = artifacts only)"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # 22.04 keeps the glibc requirement low for distribution.
+          - os: ubuntu-22.04
+            platform: linux
+          - os: windows-latest
+            platform: windows
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Linux build dependencies
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libgl-dev libjack-jackd2-dev \
+            libx11-xcb-dev libxcb1-dev libxcb-dri2-0-dev libxcb-icccm4-dev \
+            libxcursor-dev libxkbcommon-dev libxcb-shape0-dev libxcb-xfixes0-dev
+
+      - name: Rust toolchain
+        run: rustup toolchain install stable --profile minimal
+
+      - name: Tests
+        run: cargo test --workspace --release
+
+      - name: Bundle
+        run: cargo xtask bundle te2-plugin --release
+
+      - name: clap-validator
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          case "${{ matrix.platform }}" in
+            linux) pat=ubuntu ;;
+            windows) pat=win ;;
+          esac
+          url=$(gh release view 0.3.2 -R free-audio/clap-validator \
+            --json assets -q ".assets[] | select(.name | test(\"$pat\"; \"i\")) | .url" | head -1)
+          echo "validator: $url"
+          curl -sL "$url" -o cv.pkg
+          mkdir -p cv && cd cv
+          case "$url" in
+            *.tar.gz) tar xzf ../cv.pkg ;;
+            *.zip) 7z x -bso0 ../cv.pkg || unzip -qq ../cv.pkg ;;
+          esac
+          cd ..
+          bin=$(find cv -name "clap-validator*" -type f | head -1)
+          chmod +x "$bin" || true
+          "$bin" validate target/bundled/RE-DEEMER.clap
+
+      - name: Package
+        shell: bash
+        run: bash scripts/package-portable.sh ${{ matrix.platform }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: RE-DEEMER-${{ matrix.platform }}
+          path: dist/*.zip
+
+      - name: Attach to release
+        if: github.event_name == 'release' || inputs.tag != ''
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ github.event.release.tag_name }}"
+          [ -n "${{ inputs.tag }}" ] && TAG="${{ inputs.tag }}"
+          gh release upload "$TAG" dist/*.zip --clobber
