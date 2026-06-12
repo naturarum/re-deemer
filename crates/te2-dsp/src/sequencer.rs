@@ -78,6 +78,9 @@ pub struct SeqConfig {
     /// steps land on the DAW grid instead of free-running at a matching rate.
     /// `None` = free-run (sync off, or transport stopped).
     pub host_step_pos: Option<f64>,
+    /// External clocking (the Rack CLOCK jack): the internal step clock is
+    /// disabled and the cycle advances only via [`Sequencer::external_step`].
+    pub external_clock: bool,
 
     /// Manual position 1..=8 (used when the cycle is stopped).
     pub manual_position: u8,
@@ -117,6 +120,7 @@ impl Default for SeqConfig {
             cycle_len: 8,
             cycle_rate: 1.0,
             host_step_pos: None,
+            external_clock: false,
             manual_position: 1,
             anomaly_amount: 0.3,
             anomaly_polarity: AnomalyPolarity::Off,
@@ -254,6 +258,11 @@ pub struct Sequencer {
     anomaly_pos: f64,
     anomaly_len: f64,
     anomaly_amp: f64,
+
+    /// Set when the cycle enters its final step (any path: internal clock,
+    /// host snap, external step). Consumed by [`Self::take_eoc`] — feeds the
+    /// Rack EOC trigger output.
+    eoc_pending: bool,
 }
 
 impl Sequencer {
@@ -272,6 +281,7 @@ impl Sequencer {
             anomaly_pos: 0.0,
             anomaly_len: 0.0,
             anomaly_amp: 0.0,
+            eoc_pending: false,
         }
     }
 
@@ -294,8 +304,11 @@ impl Sequencer {
             if idx != self.cycle_idx {
                 self.cycle_idx = idx;
                 // Landing on the final step counts as entering it.
-                if config.anomaly_polarity != AnomalyPolarity::Off && idx == len - 1 {
-                    self.trigger_anomaly();
+                if idx == len - 1 {
+                    self.eoc_pending = true;
+                    if config.anomaly_polarity != AnomalyPolarity::Off {
+                        self.trigger_anomaly();
+                    }
                 }
             }
         }
@@ -323,6 +336,35 @@ impl Sequencer {
         }
     }
 
+    /// Advance the cycle one step from an external clock (the Rack CLOCK
+    /// jack). Fires the Anomaly / EOC on final-step entry, same as the
+    /// internal clock.
+    pub fn external_step(&mut self) {
+        let len = self.config.cycle_len.clamp(1, 8);
+        let prev = self.cycle_idx;
+        self.cycle_idx = (self.cycle_idx + 1) % len;
+        self.phase = 0.0;
+        if self.cycle_idx == len - 1 && prev != self.cycle_idx {
+            self.eoc_pending = true;
+            if self.config.anomaly_polarity != AnomalyPolarity::Off {
+                self.trigger_anomaly();
+            }
+        }
+    }
+
+    /// True once per final-step entry (end-of-cycle trigger source).
+    pub fn take_eoc(&mut self) -> bool {
+        std::mem::take(&mut self.eoc_pending)
+    }
+
+    /// The three sets' drift-slewed values, normalized 0..1 — always live,
+    /// whether or not a set is routed internally (the hardware's Set CV
+    /// outputs work the same way: the fader row is a usable CV sequencer
+    /// even when it isn't steering the echo).
+    pub fn set_values(&self) -> (f32, f32, f32) {
+        (self.white.value, self.gray.value, self.black.value)
+    }
+
     /// Normalized fader/panel value for a position within a set.
     #[inline]
     fn value_u(faders: &[f32; 7], panel_u: f32, position: u8) -> f32 {
@@ -336,8 +378,9 @@ impl Sequencer {
     /// Advance one sample.
     #[inline]
     pub fn process(&mut self) -> SeqOut {
-        // Cycle clock, sample-accurate.
-        if self.config.cycle_run {
+        // Cycle clock, sample-accurate. Externally clocked, the internal
+        // clock stands down and steps arrive via `external_step`.
+        if self.config.cycle_run && !self.config.external_clock {
             let len = self.config.cycle_len.clamp(1, 8);
             self.phase += self.config.cycle_rate as f64 / self.sample_rate;
             while self.phase >= 1.0 {
@@ -345,16 +388,19 @@ impl Sequencer {
                 let prev = self.cycle_idx;
                 self.cycle_idx = (self.cycle_idx + 1) % len;
                 // Entering the final step of the cycle fires the anomaly.
-                if self.config.anomaly_polarity != AnomalyPolarity::Off
-                    && self.cycle_idx == len - 1
-                    && prev != self.cycle_idx
-                {
-                    self.trigger_anomaly();
+                if self.cycle_idx == len - 1 && prev != self.cycle_idx {
+                    self.eoc_pending = true;
+                    if self.config.anomaly_polarity != AnomalyPolarity::Off {
+                        self.trigger_anomaly();
+                    }
                 }
             }
             if self.cycle_idx >= len {
                 self.cycle_idx = 0;
             }
+        }
+        if self.cycle_idx >= self.config.cycle_len.clamp(1, 8) {
+            self.cycle_idx = 0;
         }
         let cfg = &self.config;
 
@@ -381,19 +427,20 @@ impl Sequencer {
             ..Default::default()
         };
 
+        // Every set slews regardless of its ON switch — the Set CV outputs
+        // stay live even when the set isn't steering the echo. ON only
+        // gates the internal routing.
+        let white_target = match cfg.white_target {
+            WhiteTarget::Time => Self::value_u(&cfg.white_faders, cfg.panel_time_u, position),
+            WhiteTarget::Resonance => {
+                Self::value_u(&cfg.white_faders, cfg.panel_res_u, position)
+            }
+            WhiteTarget::ModSpeed => {
+                Self::value_u(&cfg.white_faders, cfg.panel_mod_spd_u, position)
+            }
+        };
+        let u = self.white.next(white_target, self.white_coeff);
         if cfg.white_on {
-            let target = Self::value_u(&cfg.white_faders, cfg.panel_time_u, position);
-            // Use the matching panel value for whichever target is selected.
-            let target = match cfg.white_target {
-                WhiteTarget::Time => target,
-                WhiteTarget::Resonance => {
-                    Self::value_u(&cfg.white_faders, cfg.panel_res_u, position)
-                }
-                WhiteTarget::ModSpeed => {
-                    Self::value_u(&cfg.white_faders, cfg.panel_mod_spd_u, position)
-                }
-            };
-            let u = self.white.next(target, self.white_coeff);
             match cfg.white_target {
                 WhiteTarget::Time => out.time_s = Some(map_time_s(u)),
                 WhiteTarget::Resonance => out.res = Some(map_unit(u)),
@@ -401,17 +448,15 @@ impl Sequencer {
             }
         }
 
+        let gray_target = match cfg.gray_target {
+            GrayTarget::Feedback => Self::value_u(&cfg.gray_faders, cfg.panel_fdbk_u, position),
+            GrayTarget::ModAmount => {
+                Self::value_u(&cfg.gray_faders, cfg.panel_mod_amt_u, position)
+            }
+            GrayTarget::Lpf => Self::value_u(&cfg.gray_faders, cfg.panel_lpf_u, position),
+        };
+        let u = self.gray.next(gray_target, self.gray_coeff);
         if cfg.gray_on {
-            let target = match cfg.gray_target {
-                GrayTarget::Feedback => {
-                    Self::value_u(&cfg.gray_faders, cfg.panel_fdbk_u, position)
-                }
-                GrayTarget::ModAmount => {
-                    Self::value_u(&cfg.gray_faders, cfg.panel_mod_amt_u, position)
-                }
-                GrayTarget::Lpf => Self::value_u(&cfg.gray_faders, cfg.panel_lpf_u, position),
-            };
-            let u = self.gray.next(target, self.gray_coeff);
             match cfg.gray_target {
                 GrayTarget::Feedback => out.feedback = Some(map_feedback(u)),
                 GrayTarget::ModAmount => out.mod_amt = Some(map_unit(u)),
@@ -419,17 +464,17 @@ impl Sequencer {
             }
         }
 
+        let black_target = match cfg.black_target {
+            BlackTarget::TapeLevel => {
+                Self::value_u(&cfg.black_faders, cfg.panel_tape_lvl_u, position)
+            }
+            BlackTarget::DryLevel => {
+                Self::value_u(&cfg.black_faders, cfg.panel_dry_lvl_u, position)
+            }
+            BlackTarget::Hpf => Self::value_u(&cfg.black_faders, cfg.panel_hpf_u, position),
+        };
+        let u = self.black.next(black_target, self.black_coeff);
         if cfg.black_on {
-            let target = match cfg.black_target {
-                BlackTarget::TapeLevel => {
-                    Self::value_u(&cfg.black_faders, cfg.panel_tape_lvl_u, position)
-                }
-                BlackTarget::DryLevel => {
-                    Self::value_u(&cfg.black_faders, cfg.panel_dry_lvl_u, position)
-                }
-                BlackTarget::Hpf => Self::value_u(&cfg.black_faders, cfg.panel_hpf_u, position),
-            };
-            let u = self.black.next(target, self.black_coeff);
             match cfg.black_target {
                 BlackTarget::TapeLevel => out.tape_level = Some(map_level(u)),
                 BlackTarget::DryLevel => out.dry_level = Some(map_level(u)),

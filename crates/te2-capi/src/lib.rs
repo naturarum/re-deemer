@@ -17,7 +17,7 @@ use te2_dsp::{EngineParams, Te2Engine};
 use te2_dsp::engine::{TransportKind, Wind};
 
 /// Bumped whenever the exported surface or `Te2CParams` layout changes.
-pub const TE2_ABI_VERSION: u32 = 1;
+pub const TE2_ABI_VERSION: u32 = 2;
 
 pub struct Te2Handle {
     engine: Te2Engine,
@@ -90,6 +90,11 @@ pub struct Te2CParams {
     /// 0 = off, 1 = rewind, 2 = fast-forward.
     pub wind: i32,
     pub loop_len_s: f32,
+    /// Slip-clutch drag 0..1 (irregular speed sag; 0 = off). ABI v2.
+    pub slip: f32,
+    /// External cycle clocking: the internal step clock stands down and
+    /// steps arrive via te2_clock_step(). ABI v2.
+    pub external_clock: bool,
 }
 
 fn stock_from_i32(v: i32) -> TapeStock {
@@ -128,6 +133,7 @@ fn to_engine_params(c: &Te2CParams) -> EngineParams {
         cycle_len: c.cycle_len.clamp(1, 8) as u8,
         cycle_rate: c.cycle_rate,
         host_step_pos: c.host_step_valid.then_some(c.host_step_pos),
+        external_clock: c.external_clock,
         manual_position: c.manual_position.clamp(1, 8) as u8,
         anomaly_amount: c.anomaly_amount,
         anomaly_polarity: match c.anomaly_polarity {
@@ -147,6 +153,7 @@ fn to_engine_params(c: &Te2CParams) -> EngineParams {
         mod_amount: c.mod_amount,
         mod_speed_hz: c.mod_speed_hz,
         motor_kill: c.motor_kill,
+        slip: c.slip,
         hpf_hz: c.hpf_hz,
         lpf_hz: c.lpf_hz,
         res: c.res,
@@ -245,6 +252,8 @@ fn from_engine_params(p: &EngineParams) -> Te2CParams {
         stop: p.stop,
         wind: 0,
         loop_len_s: p.loop_len_s,
+        slip: p.slip,
+        external_clock: p.seq.external_clock,
     }
 }
 
@@ -379,6 +388,83 @@ pub unsafe extern "C" fn te2_set_age(h: *mut Te2Handle, age: f32) {
     if let Some(h) = h.as_mut() {
         h.engine.set_age(age);
     }
+}
+
+/// Advance the cycle one step (external clock; realtime-safe).
+///
+/// # Safety
+/// `h` must be valid.
+#[no_mangle]
+pub unsafe extern "C" fn te2_clock_step(h: *mut Te2Handle) {
+    if let Some(h) = h.as_mut() {
+        h.engine.clock_step();
+    }
+}
+
+/// True once per cycle final-step entry (EOC trigger source).
+///
+/// # Safety
+/// `h` must be valid.
+#[no_mangle]
+pub unsafe extern "C" fn te2_take_eoc(h: *mut Te2Handle) -> bool {
+    h.as_mut().is_some_and(|h| h.engine.take_eoc())
+}
+
+/// The three sets' drift-slewed values, normalized 0..1 (Set CV outputs).
+///
+/// # Safety
+/// All pointers must be valid (outputs may be null to skip).
+#[no_mangle]
+pub unsafe extern "C" fn te2_set_values(
+    h: *const Te2Handle,
+    white: *mut f32,
+    gray: *mut f32,
+    black: *mut f32,
+) {
+    let (w, g, b) = h.as_ref().map_or((0.0, 0.0, 0.0), |h| h.engine.set_values());
+    if !white.is_null() {
+        *white = w;
+    }
+    if !gray.is_null() {
+        *gray = g;
+    }
+    if !black.is_null() {
+        *black = b;
+    }
+}
+
+/// Label of a tape stock (static string), or "?" out of range.
+#[no_mangle]
+pub extern "C" fn te2_stock_label(index: i32) -> *const std::os::raw::c_char {
+    // Static, NUL-terminated copies of the stock labels, header order.
+    const LABELS: [&[u8]; 14] = [
+        b"MAXELL XL-II ",
+        b"TDK SA ",
+        b"TDK MA ",
+        b"SONY METAL-ES ",
+        b"BASF CHROME MAXIMA ",
+        b"NAKAMICHI EX-II ",
+        b"TDK AD ",
+        b"MAXELL UD-II ",
+        b"SONY UX ",
+        b"TDK D ",
+        b"SONY HF ",
+        b"REALISTIC SUPERTAPE ",
+        b"MEMOREX ",
+        b"NO-NAME FERRIC ",
+    ];
+    const FALLBACK: &[u8] = b"? ";
+    let label = LABELS
+        .get(index.clamp(0, 13) as usize)
+        .copied()
+        .unwrap_or(FALLBACK);
+    label.as_ptr() as *const std::os::raw::c_char
+}
+
+/// Number of tape stocks.
+#[no_mangle]
+pub extern "C" fn te2_stock_count() -> i32 {
+    14
 }
 
 /// Signed seconds of tape past the heads (spool animation).

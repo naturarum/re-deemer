@@ -54,6 +54,15 @@ pub struct Motor {
     mod_amount: f64,
     mod_phase: f64,
     mod_inc: f64,
+
+    // Slip clutch (CV input on the hardware): dragging the clutch sags the
+    // speed irregularly — wow on demand. 0 = disengaged.
+    slip: f64,
+    slip_gain: f64,
+    slip_coeff: f64,
+    slip_noise: f64,
+    slip_noise_coeff: f64,
+    slip_rng: u32,
 }
 
 impl Motor {
@@ -74,6 +83,12 @@ impl Motor {
             mod_amount: 0.0,
             mod_phase: 0.0,
             mod_inc: 0.0,
+            slip: 0.0,
+            slip_gain: 1.0,
+            slip_coeff: one_pole_coeff(0.04, sample_rate),
+            slip_noise: 0.0,
+            slip_noise_coeff: one_pole_coeff(0.12, sample_rate),
+            slip_rng: 0x2545_F491,
         };
         motor.set_inertia(0.12);
         motor.set_kill_ramp(0.4, 0.25);
@@ -103,6 +118,12 @@ impl Motor {
     pub fn set_modulation(&mut self, amount: f64, speed_hz: f64) {
         self.mod_amount = amount.clamp(0.0, 1.0);
         self.mod_inc = std::f64::consts::TAU * speed_hz / self.sample_rate;
+    }
+
+    /// Slip-clutch drag 0..1 (the hardware's MTR-wow CV): the speed sags
+    /// irregularly while engaged.
+    pub fn set_slip(&mut self, slip: f64) {
+        self.slip = slip.clamp(0.0, 1.0);
     }
 
     /// Current speed without modulation, for UI reel animation and metering.
@@ -156,6 +177,16 @@ impl Motor {
             1.0
         };
 
+        // Slip clutch: drag toward a sagged speed, with a slow random wander
+        // so the sag is irregular — wow on demand, not a steady detune.
+        if self.slip > 1e-4 || self.slip_gain < 0.9999 {
+            self.slip_rng = self.slip_rng.wrapping_mul(1664525).wrapping_add(1013904223);
+            let white = (self.slip_rng >> 8) as f64 / (1 << 23) as f64 - 1.0;
+            self.slip_noise += self.slip_noise_coeff * (white - self.slip_noise);
+            let target = 1.0 - self.slip * (0.45 + 0.30 * self.slip_noise);
+            self.slip_gain += self.slip_coeff * (target.clamp(0.05, 1.0) - self.slip_gain);
+        }
+
         let dir = match self.mechanism {
             Mechanism::Rewinding => -WIND_MULT,
             Mechanism::FastForwarding => WIND_MULT,
@@ -164,7 +195,8 @@ impl Motor {
 
         // The clamp caps winding at ~24x nominal no matter how fast TIME is
         // set — about what a real mechanism manages flat out.
-        (self.speed * modulation * self.kill_gain * self.pause_gain * dir).clamp(-24.0, 24.0)
+        (self.speed * modulation * self.kill_gain * self.pause_gain * self.slip_gain * dir)
+            .clamp(-24.0, 24.0)
     }
 
     pub fn reset(&mut self) {
@@ -173,6 +205,8 @@ impl Motor {
         self.kill_gain = 1.0;
         self.pause_gain = 1.0;
         self.mod_phase = 0.0;
+        self.slip_gain = 1.0;
+        self.slip_noise = 0.0;
     }
 }
 

@@ -70,6 +70,8 @@ pub struct EngineParams {
     pub mod_speed_hz: f32,
     /// MTR button held: motor drags to a dead stop.
     pub motor_kill: bool,
+    /// Slip-clutch drag 0..1 (CV-driven irregular speed sag; 0 = off).
+    pub slip: f32,
     /// 24 dB/oct OTA highpass in the echo path (pre-record on regeneration).
     pub hpf_hz: f32,
     /// 24 dB/oct OTA lowpass in the echo path.
@@ -126,6 +128,7 @@ impl Default for EngineParams {
             mod_amount: 0.0,
             mod_speed_hz: 0.5,
             motor_kill: false,
+            slip: 0.0,
             hpf_hz: 30.0,
             lpf_hz: 7_000.0,
             res: 0.0,
@@ -328,6 +331,21 @@ impl Te2Engine {
         self.footage_cells / TAPE_RATE
     }
 
+    /// Advance the cycle one step from an external clock (Rack CLOCK jack).
+    pub fn clock_step(&mut self) {
+        self.sequencer.external_step();
+    }
+
+    /// True once per cycle final-step entry (EOC trigger source).
+    pub fn take_eoc(&mut self) -> bool {
+        self.sequencer.take_eoc()
+    }
+
+    /// The three sets' drift-slewed values, normalized 0..1 (Set CV outs).
+    pub fn set_values(&self) -> (f32, f32, f32) {
+        self.sequencer.set_values()
+    }
+
     /// Tape wear, 0.0 fresh .. 1.0 fully worn. Persisted with the project.
     pub fn age(&self) -> f32 {
         self.age
@@ -444,6 +462,7 @@ impl Te2Engine {
         self.motor
             .set_target_speed(speed_for_delay(p.delay_time as f64));
         self.motor.set_motor_kill(p.motor_kill);
+        self.motor.set_slip(p.slip as f64);
         self.motor
             .set_modulation(p.mod_amount as f64, p.mod_speed_hz as f64);
         self.feedback_g.target = p.feedback;

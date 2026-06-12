@@ -18,7 +18,7 @@
 extern "C" {
 #endif
 
-#define TE2_ABI_VERSION 1u
+#define TE2_ABI_VERSION 2u
 
 typedef struct te2_handle te2_handle;
 
@@ -84,6 +84,8 @@ typedef struct te2_params {
     bool stop;
     int32_t wind;
     float loop_len_s;      /* 0.5..30 */
+    float slip;            /* slip-clutch drag 0..1 (irregular sag); ABI v2 */
+    bool external_clock;   /* cycle steps only via te2_clock_step(); ABI v2 */
 } te2_params;
 
 uint32_t te2_abi_version(void);
@@ -101,6 +103,17 @@ void te2_process(te2_handle *h, float in_l, float in_r,
 
 void te2_eject(te2_handle *h);
 void te2_reset(te2_handle *h);
+
+/* Advance the cycle one step (external clock; realtime-safe). */
+void te2_clock_step(te2_handle *h);
+/* True once per cycle final-step entry (EOC trigger source). */
+bool te2_take_eoc(te2_handle *h);
+/* The three sets' drift-slewed values, normalized 0..1 (Set CV outputs).
+ * Output pointers may be NULL to skip. */
+void te2_set_values(const te2_handle *h, float *white, float *gray, float *black);
+/* Static label of a tape stock (header order), e.g. "MAXELL XL-II". */
+const char *te2_stock_label(int32_t index);
+int32_t te2_stock_count(void);
 
 float te2_vu(const te2_handle *h);
 double te2_motor_speed(const te2_handle *h);

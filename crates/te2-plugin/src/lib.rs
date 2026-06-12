@@ -255,6 +255,7 @@ impl Plugin for SpaceCaseTe2 {
             mod_amount: self.params.mod_amt.value(),
             mod_speed_hz: self.params.mod_spd.value(),
             motor_kill: self.params.motor_kill.value(),
+            slip: 0.0,
             hpf_hz: self.params.hpf.value(),
             lpf_hz: self.params.lpf.value(),
             res: self.params.res.value(),
