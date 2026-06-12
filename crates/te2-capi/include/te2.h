@@ -13,6 +13,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <stddef.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -89,6 +90,8 @@ typedef struct te2_params {
 } te2_params;
 
 uint32_t te2_abi_version(void);
+/* sizeof(te2_params) as the library sees it — assert it matches yours. */
+size_t te2_params_size(void);
 
 /* Returns NULL on an absurd sample rate. */
 te2_handle *te2_create(double sample_rate);

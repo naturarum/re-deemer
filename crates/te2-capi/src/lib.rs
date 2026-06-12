@@ -263,6 +263,14 @@ pub extern "C" fn te2_abi_version() -> u32 {
     TE2_ABI_VERSION
 }
 
+/// Size of `Te2CParams` as Rust sees it — compare against sizeof(te2_params)
+/// on the C side to catch layout drift between the hand-maintained header
+/// and this file.
+#[no_mangle]
+pub extern "C" fn te2_params_size() -> usize {
+    std::mem::size_of::<Te2CParams>()
+}
+
 /// Create an engine. NOT realtime-safe (runs calibration sims); call from a
 /// setup thread. Returns null on a non-finite/absurd sample rate.
 #[no_mangle]
