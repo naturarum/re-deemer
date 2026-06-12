@@ -1,6 +1,6 @@
 # RE-DEEMER — User Manual
 
-**Cassette tape echo · v1.0.2 · macOS (VST3 / CLAP / AU) · free**
+**Cassette tape echo · v1.0.3 · macOS (VST3 / CLAP / AU) · free**
 
 RE-DEEMER is a software realization of the Space Case TE-2, a cassette-based
 tape echo instrument designed around 2018–2019 that was pre-ordered by many

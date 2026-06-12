@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.0.3 — 2026-06-12
 
 - **FDBK now reaches 150%.** The old 110% ceiling left the loop gain barely
   over unity, so runaway crept up over many seconds instead of taking off.
