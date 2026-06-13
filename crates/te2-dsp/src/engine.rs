@@ -428,7 +428,18 @@ impl Te2Engine {
         let stock_changed = params.stock != self.params.stock;
         let aging_toggled = params.aging_on != self.params.aging_on;
         let condition_changed = (params.condition - self.params.condition).abs() > 1e-6;
+        let os_changed = params.os_factor != self.params.os_factor;
         self.params = *params;
+        // Changing the oversampling factor engages or retires halfband stages.
+        // A stage that was idle still holds whatever was last in its history
+        // buffers; bringing it back without clearing reads that stale state
+        // and glitches. Reset the cascade so the new factor starts clean (a
+        // sub-millisecond settle on a deliberate quality change, not garbage).
+        if os_changed {
+            for ch in 0..2 {
+                self.oversamplers[ch].reset();
+            }
+        }
         if stock_changed {
             self.stock = params.stock.profile();
         }

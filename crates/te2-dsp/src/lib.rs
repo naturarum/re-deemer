@@ -1,5 +1,6 @@
 //! Pure DSP for the Space Case TE-2 tape echo. No plugin framework dependencies.
 
+pub mod denormals;
 pub mod drive;
 pub mod engine;
 pub mod filters;
