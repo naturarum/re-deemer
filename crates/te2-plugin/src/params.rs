@@ -395,8 +395,9 @@ pub struct Te2Params {
     #[persist = "age"]
     pub tape_age: Arc<AtomicF32>,
 
-    /// Editor scale factor (0.5..2.0), from the SETUP overlay. The window
-    /// resizes to 1080x560 times this; the canvas scales with it.
+    /// Vestigial: interface scaling was removed (it broke pointer hit-testing
+    /// under host window resize on macOS). Retained only so existing saved
+    /// sessions that persisted "ui-scale" still load cleanly; nothing reads it.
     #[persist = "ui-scale"]
     pub ui_scale: Arc<AtomicF32>,
 

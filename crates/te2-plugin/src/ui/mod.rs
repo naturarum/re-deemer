@@ -16,12 +16,9 @@ use nice_plug_egui::{EguiSettings, create_egui_editor};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
-/// The fixed logical canvas everything is drawn in. UI scaling resizes the
-/// window and scales the layer; coordinates in this file never change.
+/// The fixed logical canvas everything is drawn in; the panel renders at this
+/// native size (interface scaling was removed — see `draw_panel`).
 const CANVAS: egui::Vec2 = egui::Vec2::new(1080.0, 560.0);
-
-/// The scale steps offered in SETUP.
-pub const UI_SCALES: [f32; 6] = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
 
 struct EditorState {
     /// Reel/capstan rotation, integrated from the live motor speed and the
@@ -29,8 +26,6 @@ struct EditorState {
     anim: cassette::ReelAnim,
     /// The TAPE & MACHINE overlay (opened from the RE-2 logo / SETUP button).
     settings_open: bool,
-    /// Scale we last asked the host to size the window for.
-    applied_scale: f32,
 }
 
 pub fn create(params: Arc<Te2Params>, shared: Arc<UiShared>) -> Option<Box<dyn Editor>> {
@@ -39,7 +34,6 @@ pub fn create(params: Arc<Te2Params>, shared: Arc<UiShared>) -> Option<Box<dyn E
         EditorState {
             anim: cassette::ReelAnim::default(),
             settings_open: false,
-            applied_scale: 0.0,
         },
         EguiSettings::default(),
         |_ctx, _queue, _state| {},
@@ -67,14 +61,15 @@ pub fn draw_for_snapshot(
             angle_cap: reel_angle * 9.6,
         },
         settings_open,
-        applied_scale: 0.0,
     };
     draw_panel(ui, setter, params, shared, &mut state);
 }
 
-/// Scale plumbing: the panel is drawn into its own Area whose layer carries
-/// a scale transform, and the window is resized to CANVAS x scale. Every
-/// coordinate below stays in the fixed 1080x560 canvas space.
+/// The panel renders at its fixed native 1080x560 size. Interface scaling was
+/// removed: under macOS host window-resize it desynced the NSView frame the
+/// flipped view uses for pointer hit-testing, so clicks landed in the wrong
+/// place at any non-1.0 scale (render stayed correct, which made it a trap).
+/// Resizable UI can return later via a windowing-stack upgrade. See git log.
 fn draw_panel(
     ui: &mut egui::Ui,
     setter: &nice_plug::prelude::ParamSetter,
@@ -82,36 +77,20 @@ fn draw_panel(
     shared: &UiShared,
     state: &mut EditorState,
 ) {
-    let preferred = params.ui_scale.load(Ordering::Relaxed).clamp(0.5, 2.0);
-    if (state.applied_scale - preferred).abs() > 1e-3 {
-        let want = (
-            (CANVAS.x * preferred).round() as u32,
-            (CANVAS.y * preferred).round() as u32,
-        );
-        if params.editor_state.size() != want {
-            params.editor_state.set_requested_size(want);
-        }
-        state.applied_scale = preferred;
+    // Recover sessions saved while the (removed) scaling feature was active:
+    // snap an oversized window back to the native canvas so it stays usable.
+    let native = (CANVAS.x as u32, CANVAS.y as u32);
+    if params.editor_state.size() != native {
+        params.editor_state.set_requested_size(native);
     }
-    // The transform follows the window the host actually gave us, never the
-    // wish: if a resize is refused, the UI stays 1:1 and reachable instead
-    // of scaling controls out past the window edge.
-    let scale = (params.editor_state.size().0 as f32 / CANVAS.x).clamp(0.25, 3.0);
 
     let ctx = ui.ctx().clone();
-    let panel_id = egui::Id::new("te2-panel");
-    ctx.set_transform_layer(
-        egui::LayerId::new(egui::Order::Middle, panel_id),
-        egui::emath::TSTransform::from_scaling(scale),
-    );
-    egui::Area::new(panel_id)
+    egui::Area::new(egui::Id::new("te2-panel"))
         .order(egui::Order::Middle)
         .fixed_pos(pos2(0.0, 0.0))
         .show(&ctx, |ui| {
-            // Clip rects are layer-local (pre-transform): at scales below 1
-            // the window is smaller than the canvas and would cut it off.
             ui.set_clip_rect(Rect::from_min_size(pos2(0.0, 0.0), CANVAS));
-            draw_panel_inner(ui, setter, params, shared, state, scale);
+            draw_panel_inner(ui, setter, params, shared, state);
         });
 }
 
@@ -121,7 +100,6 @@ fn draw_panel_inner(
     params: &Te2Params,
     shared: &UiShared,
     state: &mut EditorState,
-    scale: f32,
 ) {
     let dt = ui.input(|i| i.stable_dt).min(0.1);
     let speed = shared.speed.load(Ordering::Relaxed);
@@ -809,7 +787,7 @@ fn draw_panel_inner(
     );
 
     if state.settings_open {
-        draw_settings_overlay(ui, setter, params, shared, state, scale);
+        draw_settings_overlay(ui, setter, params, shared, state);
     }
 }
 
@@ -823,7 +801,6 @@ fn draw_settings_overlay(
     params: &Te2Params,
     shared: &UiShared,
     state: &mut EditorState,
-    scale: f32,
 ) {
     use crate::params::{TapeStockParam, TapeType};
     use te2_dsp::tape::TapeKind;
@@ -831,19 +808,12 @@ fn draw_settings_overlay(
     let full = Rect::from_min_size(pos2(0.0, 0.0), CANVAS);
     let mut close = ui.input(|i| i.key_pressed(egui::Key::Escape));
 
-    // The overlay layer scales with the panel.
     let overlay_id = egui::Id::new("te2-settings-overlay");
     let ctx = ui.ctx().clone();
-    ctx.set_transform_layer(
-        egui::LayerId::new(egui::Order::Foreground, overlay_id),
-        egui::emath::TSTransform::from_scaling(scale),
-    );
-
     egui::Area::new(overlay_id)
         .order(egui::Order::Foreground)
         .fixed_pos(pos2(0.0, 0.0))
         .show(&ctx, |ui| {
-            // Clip rects are layer-local (pre-transform); cover the canvas.
             ui.set_clip_rect(Rect::from_min_size(pos2(0.0, 0.0), CANVAS));
             // Scrim: dims the faceplate, swallows its input, closes on click.
             let scrim = ui.allocate_rect(full, Sense::click());
@@ -1104,48 +1074,6 @@ fn draw_settings_overlay(
             if fresh.clicked() {
                 shared.eject.store(true, Ordering::Relaxed);
             }
-
-            header(ui, 764.0, 296.0, "INTERFACE SCALE");
-            for (i, s) in UI_SCALES.into_iter().enumerate() {
-                let chip = Rect::from_center_size(
-                    pos2(679.0 + i as f32 * 34.0, 322.0),
-                    vec2(30.0, 18.0),
-                );
-                let resp = ui.allocate_rect(chip, Sense::click());
-                let is_sel = (scale - s).abs() < 1e-3;
-                let p = ui.painter();
-                let bg = if is_sel {
-                    theme::KNOB_EDGE
-                } else if resp.hovered() {
-                    Color32::from_rgb(0x24, 0x24, 0x26)
-                } else {
-                    theme::KNOB_BODY
-                };
-                p.rect_filled(chip, 3.0, bg);
-                p.rect_stroke(chip, 3.0, Stroke::new(0.8, theme::PANEL_EDGE), StrokeKind::Outside);
-                p.text(
-                    chip.center(),
-                    Align2::CENTER_CENTER,
-                    format!("{:.0}", s * 100.0),
-                    FontId::monospace(7.5),
-                    if is_sel { theme::INK } else { theme::INK_DIM },
-                );
-                if resp.clicked() {
-                    params.ui_scale.store(s, Ordering::Relaxed);
-                }
-                resp.on_hover_text(format!(
-                    "Scale the interface to {:.0}% — the window resizes with it \
-                     (host permitting). Saved with the plugin state.",
-                    s * 100.0
-                ));
-            }
-            widgets::label(
-                ui,
-                pos2(764.0, 348.0),
-                "%  OF  1080 × 560",
-                7.5,
-                theme::INK_DIM,
-            );
 
             // Footer hint.
             ui.painter().text(
