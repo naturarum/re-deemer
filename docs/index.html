@@ -147,6 +147,7 @@
     <a class="btn btn-tip" href="https://paypal.me/naturarerum">♥&nbsp;&nbsp;TIP JAR</a>
   </div>
   <p class="relmeta"><b id="rel-tag">latest release</b> · free · macOS notarized &amp; universal · Windows/Linux fresh out of the lab</p>
+  <p class="relmeta" id="dlcount"></p>
   <p class="free">RE-DEEMER is free, forever. People waited years for this machine — they deserve to get it for nothing. If it earns a place in your music, the tip jar keeps the tape rolling.</p>
 </header>
 
@@ -223,6 +224,47 @@
       wire("dl-lin", /RE-DEEMER-\d[\d.]*-linux\.zip/);
     })
     .catch(() => {});
+
+  // Live per-platform download totals, summed across every release and both
+  // the versioned and stable asset names.
+  fetch("https://api.github.com/repos/naturarum/re-deemer/releases?per_page=100")
+    .then(r => r.json())
+    .then(rels => {
+      const sum = { macos: 0, windows: 0, linux: 0 };
+      (Array.isArray(rels) ? rels : []).forEach(rel =>
+        (rel.assets || []).forEach(a => {
+          const n = a.name.toLowerCase();
+          if (n.includes("macos")) sum.macos += a.download_count;
+          else if (n.includes("windows")) sum.windows += a.download_count;
+          else if (n.includes("linux")) sum.linux += a.download_count;
+        }));
+      const total = sum.macos + sum.windows + sum.linux;
+      const el = document.getElementById("dlcount");
+      if (el && total)
+        el.innerHTML = "⬇ <b>" + total + "</b> downloads · macOS " +
+          sum.macos + " · Windows " + sum.windows + " · Linux " + sum.linux;
+    })
+    .catch(() => {});
+</script>
+
+<!-- Analytics: GoatCounter — cookieless, no consent banner, ~3.5KB.
+     Dashboard + endpoint: https://naturarum.goatcounter.com -->
+<script data-goatcounter="https://naturarum.goatcounter.com/count"
+        async src="//gc.zgo.at/count.js"></script>
+<script>
+  // Count download-button clicks as events, alongside GitHub's own per-asset
+  // counts. The .zip download doesn't navigate away, so the page persists and
+  // the beacon fires. Shows up in GoatCounter as download-mac / -win / -lin.
+  document.querySelectorAll(".btn-dl").forEach(el => {
+    el.addEventListener("click", () => {
+      if (window.goatcounter && window.goatcounter.count)
+        window.goatcounter.count({
+          path: "download-" + el.id.replace("dl-", ""),
+          title: "Download: " + el.textContent.trim(),
+          event: true,
+        });
+    });
+  });
 </script>
 
 </body>
