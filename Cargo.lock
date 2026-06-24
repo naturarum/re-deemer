@@ -3372,6 +3372,8 @@ dependencies = [
  "image",
  "nice-plug",
  "nice-plug-egui",
+ "serde",
+ "serde_json",
  "te2-dsp",
 ]
 

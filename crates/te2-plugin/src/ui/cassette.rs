@@ -13,7 +13,7 @@
 //! vectors (no textures, no meaningful CPU cost).
 
 use super::theme;
-use egui::{Align2, Color32, FontId, Pos2, Rect, Stroke, StrokeKind, Ui, pos2, vec2};
+use egui::{pos2, vec2, Align2, Color32, FontId, Pos2, Rect, Stroke, StrokeKind, Ui};
 
 /// One side of the virtual cassette, in seconds of tape at nominal speed.
 /// C60s — two 30-minute sides — were the everyday cassette; the spool
@@ -199,7 +199,12 @@ pub fn draw(
         (rp_head, Color32::from_rgb(0x6A, 0x68, 0x62)),
     ] {
         painter.rect_filled(r, 1.5, c);
-        painter.rect_stroke(r, 1.5, Stroke::new(0.8, Color32::from_rgb(0x2A, 0x28, 0x26)), StrokeKind::Inside);
+        painter.rect_stroke(
+            r,
+            1.5,
+            Stroke::new(0.8, Color32::from_rgb(0x2A, 0x28, 0x26)),
+            StrokeKind::Inside,
+        );
     }
 
     // Guides, capstan, pinch roller.
@@ -216,7 +221,11 @@ pub fn draw(
     );
     let pinch_r = h * 0.028;
     painter.circle_filled(pinch, pinch_r, Color32::from_rgb(0x2E, 0x2C, 0x2A));
-    painter.circle_stroke(pinch, pinch_r, Stroke::new(0.8, Color32::from_rgb(0x48, 0x44, 0x40)));
+    painter.circle_stroke(
+        pinch,
+        pinch_r,
+        Stroke::new(0.8, Color32::from_rgb(0x48, 0x44, 0x40)),
+    );
 
     // Reels (drawn after the path so packs cover the tangent joins).
     draw_reel(ui, left_center, left_pack, hub, anim.angle_l);
@@ -225,11 +234,7 @@ pub fn draw(
     // A faint motion streak on the packs when the tape is really moving.
     if speed.abs() > 3.0 {
         for (c, r) in [(left_center, left_pack), (right_center, right_pack)] {
-            painter.circle_stroke(
-                c,
-                r - 2.0,
-                Stroke::new(1.0, Color32::from_white_alpha(10)),
-            );
+            painter.circle_stroke(c, r - 2.0, Stroke::new(1.0, Color32::from_white_alpha(10)));
         }
     }
 
@@ -240,7 +245,11 @@ pub fn draw(
         pos2(shell.right() - 7.0, shell.bottom() - 7.0),
     ] {
         painter.circle_filled(screw, 2.0, Color32::from_rgb(0x16, 0x14, 0x12));
-        painter.circle_stroke(screw, 2.0, Stroke::new(0.6, Color32::from_rgb(0x4A, 0x44, 0x3E)));
+        painter.circle_stroke(
+            screw,
+            2.0,
+            Stroke::new(0.6, Color32::from_rgb(0x4A, 0x44, 0x3E)),
+        );
     }
 
     // Window screws.

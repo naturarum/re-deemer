@@ -473,13 +473,9 @@ impl Default for Te2Params {
             // Past 100% the loop gain genuinely exceeds unity and the tape
             // does the limiting. 150% is ~3.5 dB of excess gain — runaway
             // blooms in a couple of repeats instead of creeping up.
-            feedback: FloatParam::new(
-                "Feedback",
-                0.45,
-                FloatRange::Linear { min: 0.0, max: 1.5 },
-            )
-            .with_value_to_string(formatters::v2s_f32_percentage(1))
-            .with_string_to_value(formatters::s2v_f32_percentage()),
+            feedback: FloatParam::new("Feedback", 0.45, FloatRange::Linear { min: 0.0, max: 1.5 })
+                .with_value_to_string(formatters::v2s_f32_percentage(1))
+                .with_string_to_value(formatters::s2v_f32_percentage()),
 
             hpf: FloatParam::new(
                 "HPF",
@@ -564,13 +560,9 @@ impl Default for Te2Params {
             .with_value_to_string(formatters::v2s_f32_gain_to_db(1))
             .with_string_to_value(formatters::s2v_f32_gain_to_db()),
 
-            out_drive: FloatParam::new(
-                "Out Drive",
-                0.0,
-                FloatRange::Linear { min: 0.0, max: 1.0 },
-            )
-            .with_value_to_string(formatters::v2s_f32_percentage(1))
-            .with_string_to_value(formatters::s2v_f32_percentage()),
+            out_drive: FloatParam::new("Out Drive", 0.0, FloatRange::Linear { min: 0.0, max: 1.0 })
+                .with_value_to_string(formatters::v2s_f32_percentage(1))
+                .with_string_to_value(formatters::s2v_f32_percentage()),
 
             anomaly: FloatParam::new("Anomaly", 0.3, FloatRange::Linear { min: 0.0, max: 1.0 })
                 .with_value_to_string(formatters::v2s_f32_percentage(1))

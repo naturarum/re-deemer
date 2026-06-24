@@ -2,12 +2,13 @@
 
 Post-1.0 features, in rough priority order.
 
-> **Done (June 2026, unreleased):** §1 tape aging, §2 tape stock selector,
-> §3 settings overlay — built as one feature ("TAPE & MACHINE"). Details
+> **Shipped (v1.0.1):** §1 tape aging, §2 tape stock selector, §3 settings
+> overlay — released together as one feature ("TAPE & MACHINE"). Details
 > drifted slightly from the sketches below (the overlay opens from the TE-2
-> logo *and* a SETUP button; standard-grade stocks were added; UI scale and
-> motor-ramp trims never existed as params so they're not in the overlay).
-> The sections are kept for the original reasoning.
+> logo *and* a SETUP button; standard-grade stocks were added; the short-lived
+> interface-scale selector from 1.0.3 was later removed). §4 the preset browser
+> is the **v1.1** work in progress — the save/load mechanism is built; the 16
+> factory sounds remain. The sections are kept for the original reasoning.
 
 ---
 
@@ -108,11 +109,19 @@ panel as a stopgap — they belong here).
 
 ---
 
-## 4. In-plugin preset browser
+## 4. In-plugin preset browser — v1.1 (mechanism built)
 
-16 factory patches exist as recipes in `PRESETS.md`. Ship them as loadable
-state and add a browser strip in the UI. (Currently presets are host-saved
-only.)
+A preset is a *sound recipe*: it moves params through the host's normal
+per-parameter channel (not a full state restore), so loading one re-dials the
+panel without ejecting the tape or resetting wear. It lives as a **PRESETS
+tab** inside the SETUP overlay (alongside MACHINE), not a faceplate strip.
+
+- **User presets** — save / load / delete, one JSON file each under the OS
+  config dir. **Done** (the PRESETS tab is user-only for now).
+- **Factory presets** — a **future addition**, not surfaced in the UI yet (the
+  PRESETS tab leaves no space for them). When added: a compiled `(id, value)`
+  table plus a column in the tab; the 16 `PRESETS.md` recipes are the content,
+  dialled in by ear. Backend stub exists; it's basic UI work + content later.
 
 ---
 

@@ -2,18 +2,27 @@
 //! head), cream face, red zone past 0 VU.
 
 use super::theme;
-use egui::{Align2, FontId, Rect, Stroke, StrokeKind, Ui, pos2, vec2};
+use egui::{pos2, vec2, Align2, FontId, Rect, Stroke, StrokeKind, Ui};
 
 /// `level` is the engine's tape-level envelope (linear). 0 VU is calibrated
 /// to a healthy tape drive level (~0.5 linear).
 pub fn draw(ui: &Ui, rect: Rect, level: f32) {
     let painter = ui.painter();
+    // Panel-mount bezel frames the meter — the signature jewel of the deck.
+    let bezel = rect.expand(3.0);
+    painter.rect_filled(bezel, 6.0, theme::KNOB_BODY);
+    painter.rect_stroke(
+        bezel,
+        6.0,
+        Stroke::new(1.2, theme::KNOB_EDGE),
+        StrokeKind::Outside,
+    );
     painter.rect_filled(rect, 4.0, theme::VU_FACE);
     painter.rect_stroke(
         rect,
         4.0,
-        Stroke::new(2.0, theme::PANEL_EDGE),
-        StrokeKind::Outside,
+        Stroke::new(1.0, theme::VU_NEEDLE.gamma_multiply(0.5)),
+        StrokeKind::Inside,
     );
 
     let pivot = pos2(rect.center().x, rect.bottom() - 6.0);

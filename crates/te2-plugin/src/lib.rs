@@ -1,11 +1,12 @@
 //! Space Case TE-2 — cassette tape echo plugin shell (nice-plug).
 
 mod params;
+pub mod presets;
 pub mod ui;
 
 use nice_plug::prelude::*;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+use std::sync::Arc;
 use te2_dsp::{EngineParams, Te2Engine};
 
 pub use params::Te2Params;
@@ -145,16 +146,17 @@ impl Plugin for SpaceCaseTe2 {
                     }
                 }
                 NoteEvent::NoteOff { note, .. }
-                    if (POSITION_BASE_NOTE..POSITION_BASE_NOTE + 8).contains(&note) => {
-                        self.held_notes &= !(1 << (note - POSITION_BASE_NOTE));
-                        if self.held_notes == 0 {
-                            self.midi_position = None;
-                        } else {
-                            // Fall back to the lowest still-held note.
-                            let low = self.held_notes.trailing_zeros() as u8;
-                            self.midi_position = Some(low + 1);
-                        }
+                    if (POSITION_BASE_NOTE..POSITION_BASE_NOTE + 8).contains(&note) =>
+                {
+                    self.held_notes &= !(1 << (note - POSITION_BASE_NOTE));
+                    if self.held_notes == 0 {
+                        self.midi_position = None;
+                    } else {
+                        // Fall back to the lowest still-held note.
+                        let low = self.held_notes.trailing_zeros() as u8;
+                        self.midi_position = Some(low + 1);
                     }
+                }
                 _ => {}
             }
         }
@@ -166,7 +168,10 @@ impl Plugin for SpaceCaseTe2 {
         // Tape wear lives in the engine; the persisted field mirrors it.
         // If the field changed under us (project/preset load), re-seed the
         // engine; otherwise the engine value is authoritative.
-        let persisted_age = self.params.tape_age.load(std::sync::atomic::Ordering::Relaxed);
+        let persisted_age = self
+            .params
+            .tape_age
+            .load(std::sync::atomic::Ordering::Relaxed);
         if persisted_age != self.age_written {
             engine.set_age(persisted_age);
         }
@@ -280,8 +285,7 @@ impl Plugin for SpaceCaseTe2 {
             aging_freeze: self.params.aging_freeze.value(),
             seq,
             res_gate_enabled: self.params.res_gate.value(),
-            gate_held: self.held_notes != 0
-                || self.ui_shared.ui_gate.load(Ordering::Relaxed),
+            gate_held: self.held_notes != 0 || self.ui_shared.ui_gate.load(Ordering::Relaxed),
             transport: match self.params.transport_mode.value() {
                 params::TransportMode::Echo => te2_dsp::engine::TransportKind::Echo,
                 params::TransportMode::Play => te2_dsp::engine::TransportKind::Play,

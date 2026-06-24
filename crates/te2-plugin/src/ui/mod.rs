@@ -8,24 +8,43 @@ mod theme;
 mod vu;
 mod widgets;
 
-use crate::UiShared;
 use crate::params::Te2Params;
-use egui::{Align2, Color32, FontId, Rect, Sense, Stroke, StrokeKind, pos2, vec2};
+use crate::UiShared;
+use egui::{pos2, vec2, Align2, Color32, FontId, Rect, Sense, Stroke, StrokeKind};
 use nice_plug::prelude::Editor;
-use nice_plug_egui::{EguiSettings, create_egui_editor};
-use std::sync::Arc;
+use nice_plug_egui::{create_egui_editor, EguiSettings};
 use std::sync::atomic::Ordering;
+use std::sync::Arc;
 
 /// The fixed logical canvas everything is drawn in; the panel renders at this
 /// native size (interface scaling was removed — see `draw_panel`).
 const CANVAS: egui::Vec2 = egui::Vec2::new(1080.0, 560.0);
 
+/// Which tab the SETUP overlay shows.
+#[derive(Clone, Copy, PartialEq)]
+enum OverlayTab {
+    Machine,
+    Presets,
+}
+
 struct EditorState {
     /// Reel/capstan rotation, integrated from the live motor speed and the
     /// current pack radii (the engine supplies footage; the radii follow).
     anim: cassette::ReelAnim,
-    /// The TAPE & MACHINE overlay (opened from the RE-2 logo / SETUP button).
+    /// The overlay (TAPE & MACHINE + PRESETS tabs), opened from RE-2 / SETUP.
     settings_open: bool,
+    /// Which tab is showing; remembered across opens.
+    overlay_tab: OverlayTab,
+    /// Cached user presets, refreshed when the browser opens and after save/delete.
+    user_presets: Vec<crate::presets::UserPreset>,
+    /// Save-name text buffer for the browser.
+    save_name: String,
+    /// Last-loaded preset name, shown on the faceplate readout (best-effort —
+    /// not invalidated when the user then turns a knob).
+    current_label: Option<String>,
+    /// 0..1 fade-in of the active overlay tab's body; reset to 0 on a tab switch
+    /// so the new tab eases in instead of flashing.
+    tab_fade: f32,
 }
 
 pub fn create(params: Arc<Te2Params>, shared: Arc<UiShared>) -> Option<Box<dyn Editor>> {
@@ -34,6 +53,11 @@ pub fn create(params: Arc<Te2Params>, shared: Arc<UiShared>) -> Option<Box<dyn E
         EditorState {
             anim: cassette::ReelAnim::default(),
             settings_open: false,
+            overlay_tab: OverlayTab::Machine,
+            user_presets: crate::presets::list_user(),
+            save_name: String::new(),
+            current_label: None,
+            tab_fade: 1.0,
         },
         EguiSettings::default(),
         |_ctx, _queue, _state| {},
@@ -53,6 +77,7 @@ pub fn draw_for_snapshot(
     shared: &UiShared,
     reel_angle: f32,
     settings_open: bool,
+    presets_open: bool,
 ) {
     let mut state = EditorState {
         anim: cassette::ReelAnim {
@@ -60,7 +85,16 @@ pub fn draw_for_snapshot(
             angle_r: reel_angle * 1.3 + 1.7,
             angle_cap: reel_angle * 9.6,
         },
-        settings_open,
+        settings_open: settings_open || presets_open,
+        overlay_tab: if presets_open {
+            OverlayTab::Presets
+        } else {
+            OverlayTab::Machine
+        },
+        user_presets: crate::presets::list_user(),
+        save_name: String::new(),
+        current_label: None,
+        tab_fade: 1.0,
     };
     draw_panel(ui, setter, params, shared, &mut state);
 }
@@ -164,13 +198,16 @@ fn draw_panel_inner(
         theme::INK,
     );
     let logo = ui.allocate_rect(
-        Rect::from_center_size(pos2(993.0, 35.0), vec2(76.0, 26.0)),
+        Rect::from_center_size(pos2(993.0, 36.0), vec2(76.0, 26.0)),
         Sense::click(),
     );
     if logo.clicked() {
         state.settings_open = !state.settings_open;
+        if state.settings_open {
+            state.user_presets = crate::presets::list_user();
+        }
     }
-    logo.on_hover_text("Tape stock, aging and machine setup.");
+    logo.on_hover_text("Tape stock, aging, presets — machine setup.");
     painter.text(
         pos2(224.0, 404.0),
         Align2::CENTER_CENTER,
@@ -198,7 +235,7 @@ fn draw_panel_inner(
     );
     vu::draw(
         ui,
-        Rect::from_min_max(pos2(942.0, 50.0), pos2(1044.0, 118.0)),
+        Rect::from_min_max(pos2(945.0, 59.0), pos2(1041.0, 121.0)),
         shared.vu.load(Ordering::Relaxed),
     );
 
@@ -331,22 +368,9 @@ fn draw_panel_inner(
             setter.end_set_parameter(&params.wind);
         }
         let on = params.wind.value() == mode;
-        let p = ui.painter();
-        let body = if on { theme::KNOB_EDGE } else { theme::KNOB_BODY };
-        p.rect_filled(rect, 3.0, body);
-        p.rect_stroke(
-            rect,
-            3.0,
-            Stroke::new(1.0, theme::PANEL_EDGE),
-            StrokeKind::Outside,
-        );
-        p.text(
-            pos2(rect.center().x, rect.bottom() + 8.0),
-            Align2::CENTER_CENTER,
-            text,
-            FontId::monospace(8.0),
-            theme::INK,
-        );
+        // Same chrome as the rest of the transport row; like STP/EJ it carries no
+        // idle indicator and just lights its body while held (it's momentary).
+        widgets::draw_button(ui, rect, text, on, None);
         response.on_hover_text(help);
     }
 
@@ -370,7 +394,7 @@ fn draw_panel_inner(
         ui,
         setter,
         &params.loop_len,
-        pos2(466.0, ky),
+        pos2(452.0, ky),
         17.0,
         "LOOP",
         "Loop length for LOOP mode, in seconds of tape footage. \
@@ -380,9 +404,9 @@ fn draw_panel_inner(
         ui,
         setter,
         &params.white_drift,
-        pos2(562.0, ky),
+        pos2(580.0, ky),
         17.0,
-        "DRIFT",
+        "W",
         Some(theme::CAP_WHITE),
         false,
         "Glide time between positions for the White set (0-14 s).",
@@ -391,9 +415,9 @@ fn draw_panel_inner(
         ui,
         setter,
         &params.gray_drift,
-        pos2(626.0, ky),
+        pos2(644.0, ky),
         17.0,
-        "DRIFT",
+        "G",
         Some(theme::CAP_GRAY),
         false,
         "Glide time between positions for the Gray set (0-14 s).",
@@ -402,18 +426,21 @@ fn draw_panel_inner(
         ui,
         setter,
         &params.black_drift,
-        pos2(690.0, ky),
+        pos2(708.0, ky),
         17.0,
-        "DRIFT",
+        "B",
         Some(theme::CAP_BLACK),
         false,
         "Glide time between positions for the Black set (0-14 s).",
     );
+    // One DRIFT header over the W/G/B trio (per-set glide), so the three knobs
+    // read as one labelled group instead of three identical "DRIFT"s.
+    widgets::label(ui, pos2(644.0, 34.0), "DRIFT", 9.0, theme::INK_DIM);
     widgets::rotary_selector(
         ui,
         setter,
         &params.cycle_len,
-        pos2(786.0, ky),
+        pos2(772.0, ky),
         18.0,
         8,
         "1-8",
@@ -424,7 +451,7 @@ fn draw_panel_inner(
         ui,
         setter,
         &params.rate_div,
-        pos2(850.0, ky),
+        pos2(836.0, ky),
         17.0,
         "DIV",
         None,
@@ -436,7 +463,7 @@ fn draw_panel_inner(
         ui,
         setter,
         &params.cycle_rate,
-        pos2(914.0, ky),
+        pos2(900.0, ky),
         17.0,
         "CYCLE",
         None,
@@ -451,7 +478,7 @@ fn draw_panel_inner(
         ui,
         setter,
         &params.loop_sync,
-        Rect::from_center_size(pos2(466.0, 112.0), small),
+        Rect::from_center_size(pos2(452.0, 112.0), small),
         "SYNC",
         Some(theme::LED_RED),
         "Snap the loop length to whole beats of the host tempo.",
@@ -460,7 +487,7 @@ fn draw_panel_inner(
         ui,
         setter,
         &params.rate_sync,
-        Rect::from_center_size(pos2(850.0, 112.0), small),
+        Rect::from_center_size(pos2(836.0, 112.0), small),
         "SYNC",
         Some(theme::LED_RED),
         "Lock the cycle to the host clock: rate = tempo divided by DIV, \
@@ -470,7 +497,7 @@ fn draw_panel_inner(
         ui,
         setter,
         &params.cycle_run,
-        Rect::from_center_size(pos2(914.0, 112.0), small),
+        Rect::from_center_size(pos2(900.0, 112.0), small),
         "CYC",
         Some(theme::LED_RED),
         "Run the cycle: rotate through positions 1 to the 1-8 limit.",
@@ -484,6 +511,7 @@ fn draw_panel_inner(
         &params.white_sel,
         pos2(470.0, sy),
         ["TM", "RS", "MS"],
+        Some(theme::CAP_WHITE),
         "What the White faders control: TiMe, ReSonance, or Mod Speed.",
     );
     widgets::toggle_button(
@@ -502,6 +530,7 @@ fn draw_panel_inner(
         &params.gray_sel,
         pos2(610.0, sy),
         ["FB", "MA", "LP"],
+        Some(theme::CAP_GRAY),
         "What the Gray faders control: FeedBack, Mod Amount, or LPF.",
     );
     widgets::toggle_button(
@@ -519,6 +548,7 @@ fn draw_panel_inner(
         &params.black_sel,
         pos2(750.0, sy),
         ["TP", "DL", "HP"],
+        Some(theme::CAP_BLACK),
         "What the Black faders control: TaPe level, Dry Level, or HPF.",
     );
     widgets::toggle_button(
@@ -532,12 +562,24 @@ fn draw_panel_inner(
     );
 
     // --- Fader matrix: positions 2-8 x White/Gray/Black ---
+    // Faint alternating column tints so the eye can track 7 columns of 3 faders.
+    for col in (1..7usize).step_by(2) {
+        let cx = 466.0 + col as f32 * 92.0;
+        let cell = Rect::from_min_max(pos2(cx - 29.0, 190.0), pos2(cx + 29.0, 332.0));
+        painter.rect_filled(cell, 4.0, Color32::from_rgb(0x18, 0x18, 0x1A));
+    }
     let whites = params.white_faders();
     let grays = params.gray_faders();
     let blacks = params.black_faders();
     for col in 0..7usize {
         let cx = 466.0 + col as f32 * 92.0;
-        widgets::label(ui, pos2(cx, 198.0), &format!("{}", col + 2), 9.5, theme::INK);
+        widgets::label(
+            ui,
+            pos2(cx, 198.0),
+            &format!("{}", col + 2),
+            9.5,
+            theme::INK,
+        );
         widgets::fader(
             ui,
             setter,
@@ -565,11 +607,15 @@ fn draw_panel_inner(
             theme::CAP_BLACK,
             "Black set value for this position.",
         );
-        widgets::led(ui, pos2(cx, 322.0), position == (col + 2) as u8, theme::LED_RED);
+        widgets::led(
+            ui,
+            pos2(cx, 322.0),
+            position == (col + 2) as u8,
+            theme::LED_RED,
+        );
     }
-    // Position 1 = the panel itself.
-    widgets::led(ui, pos2(440.0, 322.0), position == 1, theme::LED_RED);
-    widgets::label(ui, pos2(440.0, 198.0), "1", 9.5, theme::INK_DIM);
+    // Position 1 is the panel itself (no fader column) — shown only on the 1-8
+    // buttons by the cassette, not labelled in the fader matrix.
 
     // --- Primary controls ---
     let ay = 366.0;
@@ -626,7 +672,7 @@ fn draw_panel_inner(
         ui,
         setter,
         &params.res_gate,
-        Rect::from_center_size(pos2(760.0, 366.0), vec2(30.0, 18.0)),
+        Rect::from_center_size(pos2(772.0, 366.0), vec2(30.0, 18.0)),
         "GATE",
         Some(theme::LED_RED),
         "Gate the resonance with the 1-8 buttons (or MIDI notes): play the \
@@ -683,7 +729,9 @@ fn draw_panel_inner(
         "Op-amp output drive on the tape + dry mix.",
     );
 
-    // --- Right block: two rows aligned with the primary knob rows ---
+    // --- Right block: SETUP latch, then the machine cluster (anomaly + motor,
+    // tape type + levels). The cluster sits a touch below the bank's knob rows
+    // so the anomaly group breathes clear of the fader matrix above. ---
     let setup = widgets::action_button(
         ui,
         Rect::from_center_size(pos2(993.0, 144.0), vec2(46.0, 22.0)),
@@ -694,14 +742,23 @@ fn draw_panel_inner(
     );
     if setup.clicked() {
         state.settings_open = !state.settings_open;
+        if state.settings_open {
+            state.user_presets = crate::presets::list_user();
+        }
     }
+
+    // The machine cluster drops a touch below the bank's knob rows (ay/by) so
+    // the anomaly group isn't jammed against the fader matrix above.
+    let rcy = 384.0;
+    let rcy2 = 470.0;
 
     widgets::switch3(
         ui,
         setter,
         &params.anomaly_pol,
-        pos2(862.0, ay),
+        pos2(900.0, rcy),
         ["-", "OFF", "+"],
+        None,
         "Anomaly polarity: the tape hiccup bends pitch down (-) or up (+). \
          Middle = off.",
     );
@@ -709,17 +766,32 @@ fn draw_panel_inner(
         ui,
         setter,
         &params.anomaly,
-        pos2(944.0, ay),
+        pos2(964.0, rcy),
         15.0,
         "ANMLY",
         "Anomaly amount: a single speed blip on the cycle's final step, from \
          a quick flick to a long singular wobble.",
     );
+    // Hairline bracket pairing the polarity switch with the amount knob, so the
+    // -/OFF/+ switch reads as part of the anomaly group rather than a stray.
+    {
+        let yb = rcy - 25.0;
+        let c = theme::INK_DIM.gamma_multiply(0.55);
+        painter.line_segment([pos2(870.0, yb), pos2(982.0, yb)], Stroke::new(1.0, c));
+        painter.line_segment(
+            [pos2(870.0, yb), pos2(870.0, yb + 5.0)],
+            Stroke::new(1.0, c),
+        );
+        painter.line_segment(
+            [pos2(982.0, yb), pos2(982.0, yb + 5.0)],
+            Stroke::new(1.0, c),
+        );
+    }
     widgets::momentary_button(
         ui,
         setter,
         &params.motor_kill,
-        Rect::from_center_size(pos2(1026.0, ay), vec2(36.0, 22.0)),
+        Rect::from_center_size(pos2(1028.0, rcy), vec2(36.0, 22.0)),
         "MTR",
         Some(theme::LED_RED),
         "Hold: kill the motor — pitch drags down to a dead stop. Release to \
@@ -730,8 +802,9 @@ fn draw_panel_inner(
         ui,
         setter,
         &params.tape_type,
-        pos2(862.0, by),
+        pos2(900.0, rcy2),
         ["NM", "CH", "MT"],
+        None,
         "The deck's tape-type setting (bias/EQ): I Normal (warm, saturates \
          early), II Chrome (cleaner), IV Metal (most headroom). Picking a \
          stock in SETUP sets this to the cassette's native type; moving it \
@@ -745,10 +818,10 @@ fn draw_panel_inner(
         te2_dsp::tape::TapeKind::IV => crate::params::TapeType::Metal,
     };
     let mismatch = params.tape_type.value() != native;
-    widgets::led(ui, pos2(824.0, by), mismatch, theme::LED_YELLOW);
+    widgets::led(ui, pos2(862.0, rcy2), mismatch, theme::LED_YELLOW);
     if mismatch {
         ui.allocate_rect(
-            Rect::from_center_size(pos2(824.0, by), vec2(12.0, 12.0)),
+            Rect::from_center_size(pos2(862.0, rcy2), vec2(12.0, 12.0)),
             Sense::hover(),
         )
         .on_hover_text(format!(
@@ -761,7 +834,7 @@ fn draw_panel_inner(
         ui,
         setter,
         &params.tape_in,
-        pos2(944.0, by),
+        pos2(964.0, rcy2),
         15.0,
         "TAPE IN",
         "How hot the signal hits the tape. Drives saturation and compression; \
@@ -771,7 +844,7 @@ fn draw_panel_inner(
         ui,
         setter,
         &params.out_level,
-        pos2(1026.0, by),
+        pos2(1028.0, rcy2),
         15.0,
         "OUT",
         "Output trim, -24 to +6 dB.",
@@ -787,15 +860,62 @@ fn draw_panel_inner(
     );
 
     if state.settings_open {
-        draw_settings_overlay(ui, setter, params, shared, state);
+        draw_overlay(ui, setter, params, shared, state);
     }
 }
 
+/// The MACHINE | PRESETS tab bar at the top of the overlay card. Returns the tab
+/// the user clicked (if any). Drawn by both overlay bodies so the card reads as
+/// one tabbed modal.
+fn draw_overlay_tabs(ui: &mut egui::Ui, current: OverlayTab) -> Option<OverlayTab> {
+    let mut clicked = None;
+    for (tab, label, x) in [
+        (OverlayTab::Machine, "MACHINE", 194.0_f32),
+        (OverlayTab::Presets, "PRESETS", 298.0_f32),
+    ] {
+        let rect = Rect::from_min_size(pos2(x, 84.0), vec2(96.0, 22.0));
+        let resp = ui.allocate_rect(rect, Sense::click());
+        let active = tab == current;
+        let bg = if active {
+            theme::KNOB_EDGE
+        } else if resp.hovered() {
+            Color32::from_rgb(0x24, 0x24, 0x26)
+        } else {
+            Color32::TRANSPARENT
+        };
+        ui.painter().rect_filled(rect, 4.0, bg);
+        ui.painter().text(
+            rect.center(),
+            Align2::CENTER_CENTER,
+            label,
+            FontId::monospace(11.0),
+            if active { theme::INK } else { theme::INK_DIM },
+        );
+        if active {
+            ui.painter().line_segment(
+                [
+                    pos2(rect.left() + 4.0, rect.bottom() + 1.0),
+                    pos2(rect.right() - 4.0, rect.bottom() + 1.0),
+                ],
+                Stroke::new(2.0, theme::LED_YELLOW),
+            );
+        }
+        if resp.clicked() && !active {
+            clicked = Some(tab);
+        }
+    }
+    ui.painter().line_segment(
+        [pos2(186.0, 110.0), pos2(894.0, 110.0)],
+        Stroke::new(1.0, theme::KNOB_EDGE),
+    );
+    clicked
+}
 
-/// The TAPE & MACHINE overlay: a modal card over a dimmed faceplate, laid
-/// out on a strict three-column grid (stocks | stocks + machine | aging +
-/// scale), every group centered on its column.
-fn draw_settings_overlay(
+/// The SETUP overlay: one modal Area (scrim + card + MACHINE|PRESETS tab bar +
+/// close ✕) whose body switches between the two tabs. A single Area — not one
+/// per tab — means switching tabs swaps only the inner content, so the card
+/// stays put instead of flashing out and back in; the new tab body fades in.
+fn draw_overlay(
     ui: &mut egui::Ui,
     setter: &nice_plug::prelude::ParamSetter,
     params: &Te2Params,
@@ -807,10 +927,21 @@ fn draw_settings_overlay(
 
     let full = Rect::from_min_size(pos2(0.0, 0.0), CANVAS);
     let mut close = ui.input(|i| i.key_pressed(egui::Key::Escape));
+    let cur = state.overlay_tab;
+    let sel = state.current_label.clone();
+    let users = state.user_presets.clone();
+    let mut tab_click: Option<OverlayTab> = None;
+    let mut load: Option<(String, std::collections::BTreeMap<String, f32>)> = None;
+    let mut del: Option<String> = None;
+    let mut do_save = false;
 
-    let overlay_id = egui::Id::new("te2-settings-overlay");
+    // The active tab's body fades in (reset to 0 on a tab switch, below).
+    let dt = ui.input(|i| i.stable_dt).min(0.1);
+    state.tab_fade = (state.tab_fade + dt / 0.12).min(1.0);
+    let fade = state.tab_fade;
+
     let ctx = ui.ctx().clone();
-    egui::Area::new(overlay_id)
+    egui::Area::new(egui::Id::new("te2-overlay"))
         .order(egui::Order::Foreground)
         .fixed_pos(pos2(0.0, 0.0))
         .show(&ctx, |ui| {
@@ -834,13 +965,7 @@ fn draw_settings_overlay(
                 Stroke::new(1.5, theme::KNOB_EDGE),
                 StrokeKind::Inside,
             );
-            p.text(
-                pos2(194.0, 94.0),
-                Align2::LEFT_CENTER,
-                "TAPE  &  MACHINE",
-                FontId::monospace(15.0),
-                theme::INK,
-            );
+            tab_click = draw_overlay_tabs(ui, cur);
 
             // Close button.
             let x_rect = Rect::from_center_size(pos2(886.0, 94.0), vec2(20.0, 20.0));
@@ -855,6 +980,28 @@ fn draw_settings_overlay(
             }
             if x_resp.clicked() {
                 close = true;
+            }
+
+            // Body fades in on a tab switch; the card and tabs above stay solid.
+            ui.set_opacity(fade);
+            if cur == OverlayTab::Machine {
+            // Recessed section panels group the controls (the neutral-inset
+            // language shared with the Rack module). Drawn first, behind the
+            // rows and knobs. A: premium+standard stocks; B: budget; C: aging
+            // (top) + machine (bottom).
+            for panel in [
+                Rect::from_min_max(pos2(180.0, 114.0), pos2(414.0, 382.0)),
+                Rect::from_min_max(pos2(420.0, 114.0), pos2(648.0, 258.0)),
+                Rect::from_min_max(pos2(654.0, 114.0), pos2(884.0, 272.0)),
+                Rect::from_min_max(pos2(654.0, 286.0), pos2(884.0, 462.0)),
+            ] {
+                ui.painter().rect_filled(panel, 5.0, Color32::from_rgb(0x10, 0x10, 0x12));
+                ui.painter().rect_stroke(
+                    panel,
+                    5.0,
+                    Stroke::new(1.0, theme::PANEL_EDGE),
+                    StrokeKind::Inside,
+                );
             }
 
             // --- Three columns, 212 wide: A 194, B 426, C 658. Midlines
@@ -878,7 +1025,15 @@ fn draw_settings_overlay(
                     theme::KNOB_BODY
                 };
                 p.rect_filled(rect, 3.0, bg);
-                widgets::led(ui, pos2(x + 11.0, rect.center().y), is_sel, theme::LED_YELLOW);
+                // Only the chosen stock glows; the rest stay dark neutral (a lit
+                // dot on every row read as "all armed").
+                let dot = pos2(x + 11.0, rect.center().y);
+                if is_sel {
+                    p.circle_filled(dot, 5.5, theme::LED_YELLOW.gamma_multiply(0.22));
+                    p.circle_filled(dot, 3.0, theme::LED_YELLOW);
+                } else {
+                    p.circle_filled(dot, 2.2, theme::PANEL_EDGE);
+                }
                 ui.painter().text(
                     pos2(x + 22.0, rect.center().y),
                     Align2::LEFT_CENTER,
@@ -948,7 +1103,7 @@ fn draw_settings_overlay(
                 stock_row(ui, 194.0, 308.0 + i as f32 * 24.0, s);
             }
 
-            // --- Column B: budget stocks + machine trims ---
+            // --- Column B: budget stocks ---
             header(ui, 532.0, 124.0, "BUDGET  ·  ~20 MIN");
             for (i, s) in [
                 TapeStockParam::TdkD,
@@ -962,48 +1117,7 @@ fn draw_settings_overlay(
             {
                 stock_row(ui, 426.0, 136.0 + i as f32 * 24.0, s);
             }
-            header(ui, 532.0, 296.0, "MACHINE");
-            widgets::knob(
-                ui,
-                setter,
-                &params.noise,
-                pos2(492.0, 346.0),
-                17.0,
-                "NOISE",
-                "Tape hiss level. The noise is recorded onto the tape, so it \
-                 regenerates through the feedback loop like real hiss.",
-            );
-            widgets::knob(
-                ui,
-                setter,
-                &params.mech,
-                pos2(572.0, 346.0),
-                17.0,
-                "MECH",
-                "Mechanism condition: wow, flutter, dropouts and bias sag. \
-                 0 = freshly serviced, full = thrift-store wreck.",
-            );
-            widgets::switch3(
-                ui,
-                setter,
-                &params.quality,
-                pos2(490.0, 424.0),
-                ["ECO", "STD", "ULT"],
-                "Oversampling for the tape magnetics: 2x / 4x / 8x.",
-            );
-            widgets::toggle_button(
-                ui,
-                setter,
-                &params.midi_enable,
-                Rect::from_center_size(pos2(578.0, 424.0), vec2(36.0, 16.0)),
-                "MIDI",
-                Some(theme::LED_GREEN),
-                "Let MIDI notes C3-G3 select and gate positions. Off by \
-                 default so a keyboard routed to the track doesn't move the \
-                 sequencer.",
-            );
-
-            // --- Column C: aging + interface scale ---
+            // --- Column C: aging (top) + machine (bottom) ---
             header(ui, 764.0, 124.0, "TAPE AGING");
             widgets::toggle_button(
                 ui,
@@ -1075,6 +1189,50 @@ fn draw_settings_overlay(
                 shared.eject.store(true, Ordering::Relaxed);
             }
 
+            // Machine trims live under aging in column C (fills the lower-right
+            // and groups the "machine room" controls together).
+            header(ui, 764.0, 296.0, "MACHINE");
+            widgets::knob(
+                ui,
+                setter,
+                &params.noise,
+                pos2(726.0, 346.0),
+                17.0,
+                "NOISE",
+                "Tape hiss level. The noise is recorded onto the tape, so it \
+                 regenerates through the feedback loop like real hiss.",
+            );
+            widgets::knob(
+                ui,
+                setter,
+                &params.mech,
+                pos2(806.0, 346.0),
+                17.0,
+                "MECH",
+                "Mechanism condition: wow, flutter, dropouts and bias sag. \
+                 0 = freshly serviced, full = thrift-store wreck.",
+            );
+            widgets::switch3(
+                ui,
+                setter,
+                &params.quality,
+                pos2(724.0, 424.0),
+                ["ECO", "STD", "ULT"],
+                None,
+                "Oversampling for the tape magnetics: 2x / 4x / 8x.",
+            );
+            widgets::toggle_button(
+                ui,
+                setter,
+                &params.midi_enable,
+                Rect::from_center_size(pos2(810.0, 424.0), vec2(36.0, 16.0)),
+                "MIDI",
+                Some(theme::LED_GREEN),
+                "Let MIDI notes C3-G3 select and gate positions. Off by \
+                 default so a keyboard routed to the track doesn't move the \
+                 sequencer.",
+            );
+
             // Footer hint.
             ui.painter().text(
                 pos2(card.center().x, card.bottom() - 14.0),
@@ -1083,9 +1241,169 @@ fn draw_settings_overlay(
                 FontId::monospace(7.0),
                 Color32::from_rgb(0x4A, 0x48, 0x44),
             );
+            } else {
+                presets_body(
+                    ui,
+                    card,
+                    &sel,
+                    &users,
+                    &mut state.save_name,
+                    &mut load,
+                    &mut del,
+                    &mut do_save,
+                );
+            }
         });
 
+    if let Some(t) = tab_click {
+        state.overlay_tab = t;
+        state.tab_fade = 0.0;
+        if t == OverlayTab::Presets {
+            state.user_presets = crate::presets::list_user();
+        }
+    }
+    if let Some((name, values)) = load {
+        crate::presets::apply(setter, params, &values);
+        state.current_label = Some(name);
+    }
+    if let Some(name) = del {
+        let _ = crate::presets::delete(&name);
+        if state.current_label.as_deref() == Some(name.as_str()) {
+            state.current_label = None;
+        }
+        state.user_presets = crate::presets::list_user();
+    }
+    if do_save {
+        let trimmed = state.save_name.trim().to_string();
+        if !trimmed.is_empty() {
+            let values = crate::presets::capture(params);
+            let _ = crate::presets::save(&trimmed, &values);
+            state.user_presets = crate::presets::list_user();
+            state.current_label = Some(trimmed);
+            state.save_name.clear();
+        }
+    }
     if close {
         state.settings_open = false;
     }
+}
+
+/// The USER-presets body for the PRESETS tab: a name field + SAVE to capture
+/// the current sound, then the saved list (click to load, ✕ to delete). The
+/// scrim / card / tab bar are owned by `draw_overlay`; loads and saves are
+/// resolved there (through the ParamSetter channel, so the tape and window are
+/// untouched). Records its actions into the out-params. (Factory presets are
+/// roadmapped; this tab leaves no space for them yet.)
+#[allow(clippy::too_many_arguments)]
+fn presets_body(
+    ui: &mut egui::Ui,
+    card: Rect,
+    sel: &Option<String>,
+    users: &[crate::presets::UserPreset],
+    save_name: &mut String,
+    load: &mut Option<(String, std::collections::BTreeMap<String, f32>)>,
+    del: &mut Option<String>,
+    do_save: &mut bool,
+) {
+    // One centered panel (matches the MACHINE tab's recessed insets).
+    let panel = Rect::from_min_max(pos2(290.0, 114.0), pos2(790.0, 462.0));
+    ui.painter()
+        .rect_filled(panel, 5.0, Color32::from_rgb(0x10, 0x10, 0x12));
+    ui.painter().rect_stroke(
+        panel,
+        5.0,
+        Stroke::new(1.0, theme::PANEL_EDGE),
+        StrokeKind::Inside,
+    );
+
+    // Save row at the top, where saved presets appear.
+    let name_rect = Rect::from_min_size(pos2(330.0, 134.0), vec2(318.0, 24.0));
+    ui.put(
+        name_rect,
+        egui::TextEdit::singleline(save_name)
+            .hint_text("name this sound")
+            .font(FontId::monospace(11.0)),
+    );
+    let save_btn = widgets::action_button(
+        ui,
+        Rect::from_center_size(pos2(714.0, 146.0), vec2(60.0, 24.0)),
+        "SAVE",
+        false,
+        Some(theme::LED_YELLOW),
+        "Save the current sound as a user preset.",
+    );
+    if save_btn.clicked() {
+        *do_save = true;
+    }
+    ui.painter().line_segment(
+        [pos2(330.0, 172.0), pos2(750.0, 172.0)],
+        Stroke::new(1.0, theme::PANEL_EDGE),
+    );
+
+    if users.is_empty() {
+        ui.painter().text(
+            pos2(540.0, 252.0),
+            Align2::CENTER_CENTER,
+            "nothing saved yet",
+            FontId::monospace(9.0),
+            theme::INK_DIM,
+        );
+        ui.painter().text(
+            pos2(540.0, 270.0),
+            Align2::CENTER_CENTER,
+            "name the current sound above, then SAVE",
+            FontId::monospace(7.5),
+            theme::INK_DIM.gamma_multiply(0.8),
+        );
+    }
+    for (i, up) in users.iter().take(12).enumerate() {
+        let y = 184.0 + i as f32 * 22.0;
+        let rect = Rect::from_min_size(pos2(330.0, y), vec2(420.0, 20.0));
+        let resp = ui.allocate_rect(rect, Sense::click());
+        let is_sel = sel.as_deref() == Some(up.name.as_str());
+        let bg = if is_sel {
+            theme::KNOB_EDGE
+        } else if resp.hovered() {
+            Color32::from_rgb(0x24, 0x24, 0x26)
+        } else {
+            theme::KNOB_BODY
+        };
+        ui.painter().rect_filled(rect, 3.0, bg);
+        ui.painter().text(
+            pos2(rect.left() + 8.0, rect.center().y),
+            Align2::LEFT_CENTER,
+            &up.name,
+            FontId::monospace(8.5),
+            if is_sel { theme::INK } else { theme::INK_DIM },
+        );
+        // Delete ✕ on the right.
+        let d_rect =
+            Rect::from_center_size(pos2(rect.right() - 12.0, rect.center().y), vec2(16.0, 16.0));
+        let d_resp = ui.allocate_rect(d_rect, Sense::click());
+        let d_color = if d_resp.hovered() {
+            theme::LED_RED
+        } else {
+            theme::INK_DIM
+        };
+        let dc = d_rect.center();
+        for (a, b) in [
+            (dc + vec2(-3.5, -3.5), dc + vec2(3.5, 3.5)),
+            (dc + vec2(-3.5, 3.5), dc + vec2(3.5, -3.5)),
+        ] {
+            ui.painter().line_segment([a, b], Stroke::new(1.4, d_color));
+        }
+        if d_resp.clicked() {
+            *del = Some(up.name.clone());
+        } else if resp.clicked() {
+            *load = Some((up.name.clone(), up.values.clone()));
+        }
+    }
+
+    ui.painter().text(
+        pos2(card.center().x, card.bottom() - 14.0),
+        Align2::CENTER_CENTER,
+        "PRESETS CAPTURE THE SOUND  ·  NOT TAPE WEAR, MASTER LEVEL, OR LIVE TRANSPORT",
+        FontId::monospace(7.0),
+        Color32::from_rgb(0x4A, 0x48, 0x44),
+    );
 }

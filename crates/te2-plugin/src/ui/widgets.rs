@@ -3,11 +3,10 @@
 //! nice-plug parameters through the `ParamSetter`.
 
 use super::theme;
-use nice_plug::prelude::{Param, ParamSetter};
 use egui::{
-    Align2, Color32, FontId, Pos2, Rect, Response, Sense, Stroke, StrokeKind, Ui, Vec2, pos2,
-    vec2,
+    pos2, vec2, Align2, Color32, FontId, Pos2, Rect, Response, Sense, Stroke, StrokeKind, Ui, Vec2,
 };
+use nice_plug::prelude::{Param, ParamSetter};
 
 pub fn label(ui: &Ui, pos: Pos2, text: &str, size: f32, color: Color32) {
     ui.painter().text(
@@ -74,7 +73,9 @@ fn help_tip<P: Param>(response: Response, param: &P, help: &str) {
 /// Show the parameter's formatted value while dragging.
 fn value_tip<P: Param>(ui: &Ui, response: &Response, param: &P, center: Pos2, offset_y: f32) {
     if response.dragged() {
-        let text = param.normalized_value_to_string(param.unmodulated_normalized_value(), true).to_string();
+        let text = param
+            .normalized_value_to_string(param.unmodulated_normalized_value(), true)
+            .to_string();
         let pos = pos2(center.x, center.y + offset_y);
         let painter = ui.painter();
         let galley_rect = Rect::from_center_size(pos, vec2(text.len() as f32 * 7.0 + 10.0, 16.0));
@@ -146,16 +147,25 @@ pub fn knob_capped<P: Param>(
             theme::KNOB_MARK
         };
         painter.line_segment(
-            [center + dir * (radius * 0.18), center + dir * (radius * 0.52)],
+            [
+                center + dir * (radius * 0.18),
+                center + dir * (radius * 0.52),
+            ],
             Stroke::new(2.0, on_cap),
         );
         painter.line_segment(
-            [center + dir * (radius * 0.58), center + dir * (radius * 0.92)],
+            [
+                center + dir * (radius * 0.58),
+                center + dir * (radius * 0.92),
+            ],
             Stroke::new(2.0, theme::KNOB_MARK),
         );
     } else {
         painter.line_segment(
-            [center + dir * (radius * 0.25), center + dir * (radius * 0.92)],
+            [
+                center + dir * (radius * 0.25),
+                center + dir * (radius * 0.92),
+            ],
             Stroke::new(2.0, theme::KNOB_MARK),
         );
     }
@@ -174,7 +184,11 @@ pub fn knob_capped<P: Param>(
         pos2(center.x, center.y + radius + 11.0),
         text,
         9.5,
-        if dim_label { theme::INK_DIM } else { theme::INK },
+        if dim_label {
+            theme::INK_DIM
+        } else {
+            theme::INK
+        },
     );
     value_tip(ui, &response, param, center, -(radius + 14.0));
     help_tip(response, param, help);
@@ -218,13 +232,16 @@ pub fn fader<P: Param>(
     help_tip(response, param, help);
 }
 
-/// Three-position slide switch for 3-variant enum params.
+/// Three-position slide switch for 3-variant enum params. `accent` paints a
+/// small colour tab to the left of the switch — used to tie the White/Gray/Black
+/// set selectors to their fader-cap colour (pass `None` for ordinary switches).
 pub fn switch3<P: Param>(
     ui: &mut Ui,
     setter: &ParamSetter,
     param: &P,
     center: Pos2,
     labels: [&str; 3],
+    accent: Option<Color32>,
     help: &str,
 ) {
     let w = 54.0;
@@ -258,6 +275,18 @@ pub fn switch3<P: Param>(
     let thumb_x = rect.left() + slot_w * (idx as f32 + 0.5);
     let thumb = Rect::from_center_size(pos2(thumb_x, center.y), vec2(slot_w - 4.0, 10.0));
     painter.rect_filled(thumb, 2.0, theme::CAP_WHITE);
+
+    // Set-colour tab on the left edge (White/Gray/Black identity).
+    if let Some(c) = accent {
+        let chip = Rect::from_center_size(pos2(rect.left() - 9.0, center.y), vec2(6.0, 13.0));
+        painter.rect_filled(chip, 1.5, c);
+        painter.rect_stroke(
+            chip,
+            1.5,
+            Stroke::new(0.8, theme::INK_DIM),
+            StrokeKind::Outside,
+        );
+    }
 
     for (i, l) in labels.iter().enumerate() {
         let x = rect.left() + slot_w * (i as f32 + 0.5);
@@ -345,7 +374,7 @@ pub fn action_button(
     response
 }
 
-fn draw_button(ui: &Ui, rect: Rect, text: &str, on: bool, accent: Option<Color32>) {
+pub fn draw_button(ui: &Ui, rect: Rect, text: &str, on: bool, accent: Option<Color32>) {
     let painter = ui.painter();
     let body = if on {
         theme::KNOB_EDGE
@@ -361,8 +390,15 @@ fn draw_button(ui: &Ui, rect: Rect, text: &str, on: bool, accent: Option<Color32
     );
     if let Some(color) = accent {
         let dot = pos2(rect.center().x, rect.top() + 5.0);
-        ui.painter()
-            .circle_filled(dot, 2.6, if on { color } else { color.gamma_multiply(0.35) });
+        ui.painter().circle_filled(
+            dot,
+            2.6,
+            if on {
+                color
+            } else {
+                color.gamma_multiply(0.35)
+            },
+        );
     }
     painter.text(
         pos2(rect.center().x, rect.bottom() + 8.0),

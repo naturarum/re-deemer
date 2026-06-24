@@ -1,6 +1,7 @@
 //! Headless panel snapshot for development:
 //! `cargo run -p te2-plugin --features snapshot --bin te2-snapshot -- out.png`
-//! Pass `overlay` as a second argument to render with the settings card open.
+//! Pass `overlay` to render the settings card open, or `presets` for the
+//! preset browser.
 
 use nice_plug::prelude::*;
 use std::sync::Arc;
@@ -32,6 +33,7 @@ fn main() {
         .nth(1)
         .unwrap_or_else(|| "te2-panel.png".to_string());
     let overlay = std::env::args().any(|a| a == "overlay");
+    let presets = std::env::args().any(|a| a == "presets");
 
     let params = Arc::new(Te2Params::default());
     let shared = Arc::new(UiShared::default());
@@ -39,20 +41,25 @@ fn main() {
 
     if overlay {
         // Give the wear bar something to show.
-        params.tape_age.store(0.37, std::sync::atomic::Ordering::Relaxed);
+        params
+            .tape_age
+            .store(0.37, std::sync::atomic::Ordering::Relaxed);
     }
     // Optional spool position, in seconds of tape footage (0..1800 = side A).
-    if let Some(f) = std::env::args()
-        .find_map(|a| a.strip_prefix("footage=").and_then(|s| s.parse::<f32>().ok()))
-    {
-        shared.footage.store(f, std::sync::atomic::Ordering::Relaxed);
+    if let Some(f) = std::env::args().find_map(|a| {
+        a.strip_prefix("footage=")
+            .and_then(|s| s.parse::<f32>().ok())
+    }) {
+        shared
+            .footage
+            .store(f, std::sync::atomic::Ordering::Relaxed);
     }
 
     let mut harness = egui_kittest::Harness::builder()
         .with_size(egui::vec2(1080.0, 560.0))
         .build_ui(move |ui| {
             let setter = ParamSetter::new(&*context);
-            te2_plugin::ui::draw_for_snapshot(ui, &setter, &params, &shared, 0.7, overlay);
+            te2_plugin::ui::draw_for_snapshot(ui, &setter, &params, &shared, 0.7, overlay, presets);
         });
 
     harness.run();
