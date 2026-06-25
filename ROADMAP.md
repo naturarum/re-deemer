@@ -109,7 +109,7 @@ panel as a stopgap — they belong here).
 
 ---
 
-## 4. In-plugin preset browser — v1.1 (mechanism built)
+## 4. In-plugin preset browser — SHIPPED (v1.1.0)
 
 A preset is a *sound recipe*: it moves params through the host's normal
 per-parameter channel (not a full state restore), so loading one re-dials the

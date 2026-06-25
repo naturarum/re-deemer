@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.1.0 — 2026-06-25
+
+- **Presets.** SETUP has a new PRESETS tab — name and save the current sound,
+  load it back, or delete it. A preset captures the *sound* (knobs, faders,
+  sets, filters, mod, anomaly, tape type and stock, transport mode), not tape
+  wear, master output, or the live transport, so loading one re-dials the panel
+  without ejecting the tape or resetting wear. Presets are saved as files in
+  your user config folder.
+- **Interface refresh.** The three set-glide knobs are now labelled W / G / B
+  under one DRIFT header and the set switches wear their colour; every knob and
+  switch sits on a tidier alignment grid; the VU gained a proper bezel; the
+  transport's RW/FF match their neighbours; the anomaly controls are bracketed;
+  and the SETUP panel's tape-stock / aging / machine controls are grouped into
+  framed sections. Switching SETUP tabs now fades smoothly instead of flashing.
+
 ## 1.0.4 — 2026-06-12
 
 - **Now on Windows and Linux.** VST3 + CLAP for both, built and

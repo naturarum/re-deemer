@@ -3351,21 +3351,21 @@ dependencies = [
 
 [[package]]
 name = "te2-capi"
-version = "1.0.4"
+version = "1.1.0"
 dependencies = [
  "te2-dsp",
 ]
 
 [[package]]
 name = "te2-dsp"
-version = "1.0.4"
+version = "1.1.0"
 dependencies = [
  "hound",
 ]
 
 [[package]]
 name = "te2-plugin"
-version = "1.0.4"
+version = "1.1.0"
 dependencies = [
  "egui",
  "egui_kittest",
@@ -3379,7 +3379,7 @@ dependencies = [
 
 [[package]]
 name = "te2-render"
-version = "1.0.4"
+version = "1.1.0"
 dependencies = [
  "hound",
  "te2-dsp",
@@ -4645,7 +4645,7 @@ checksum = "3ae8337f8a065cfc972643663ea4279e04e7256de865aa66fe25cec5fb912d3f"
 
 [[package]]
 name = "xtask"
-version = "1.0.4"
+version = "1.1.0"
 dependencies = [
  "nice-plug-xtask",
 ]

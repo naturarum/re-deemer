@@ -109,6 +109,8 @@ cargo run -p te2-plugin --release --features snapshot --bin te2-snapshot out.png
 - Windows and Linux builds come from CI (`.github/workflows/
   plugins-portable.yml`) and pass clap-validator there; they're younger
   than the macOS builds — reports welcome.
-- `PRESETS.md` has 16 factory panel recipes; `ROADMAP.md` is what's next.
+- Save your own presets in **SETUP → PRESETS** (stored in your user config
+  folder); `PRESETS.md` has 16 starter panel recipes; `ROADMAP.md` is what's
+  next.
 
 *A tribute. You waited long enough.*

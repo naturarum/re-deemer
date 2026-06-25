@@ -42,7 +42,10 @@ Everything from a clean checkout to a published, notarized release.
 ## Every release
 
 ```
-# 1. bump version in Cargo.toml ([workspace.package]) + add CHANGELOG entry
+# 1. bump version in Cargo.toml ([workspace.package]) AND in
+#    wrapper-au/CMakeLists.txt (project VERSION + BUNDLE_VERSION — these feed the
+#    AU component version, and package.sh aborts if they disagree with the crate
+#    version). Add a CHANGELOG entry.
 # 2. build, test, package:
 ./scripts/package.sh
 
