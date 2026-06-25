@@ -42,9 +42,9 @@
   .frame { height: 10px; background: linear-gradient(180deg, var(--wood-light), var(--wood) 55%, var(--wood-edge)); }
   /* A length of running tape, used as a section divider. */
   .tape {
-    height: 4px; border: 0; margin: 0;
+    height: 6px; border: 0; margin: 0;
     background: repeating-linear-gradient(90deg, #4a3228 0 26px, #5e4234 26px 28px);
-    background-size: 28px 4px;
+    background-size: 28px 6px;
     animation: roll 1.2s linear infinite;
     opacity: .8;
   }
@@ -98,7 +98,10 @@
   #dlcount { margin-bottom: 22px; }
   .free { text-align: center; color: var(--ink-dim); font-size: 13px; max-width: 560px; margin: 0 auto 40px; }
 
-  section { padding: 46px 0; }
+  /* .wrap (a class) outranks the bare `section` selector, so vertical padding
+     must live on `section.wrap` to actually apply. Keep it modest — the page is
+     meant to stay compact, just breathing a little between dividers. */
+  section.wrap { padding-block: 18px; }
   h2 { font-size: 18px; letter-spacing: 2px; color: var(--cream); margin-bottom: 18px; text-transform: uppercase; }
   h2::before { content: "▮ "; color: var(--red); }
   p + p { margin-top: 12px; }
