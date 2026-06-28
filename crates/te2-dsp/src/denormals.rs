@@ -1,17 +1,20 @@
 //! Flush-to-zero / denormals-are-zero control for the audio thread.
 //!
 //! Subnormal (denormal) floats arise naturally in IIR feedback and filter
-//! tails as they decay toward silence. On x86-64 and (scalar) AArch64 the FPU
-//! handles subnormals in microcode — often 10–100× slower per operation than
-//! a normal float — so an engine that idles cheaply can spike the CPU for as
-//! long as a tail lingers in the subnormal range.
+//! tails as they decay toward silence. On x86-64 the FPU handles subnormals in
+//! microcode — often 10–100× slower per operation than a normal float — so an
+//! engine that idles cheaply can spike the CPU for as long as a tail lingers in
+//! the subnormal range. (AArch64 / Apple Silicon is far less affected: this
+//! engine measures ~1× with or without flushing — see `examples/denormal_bench`.)
 //!
-//! Plugin hosts (VST3 / CLAP / AU) set flush-to-zero on their audio threads,
-//! so the DAW builds never pay this. VCV Rack's engine thread does NOT, which
-//! is why the same engine stutters intermittently inside Rack whenever its
-//! echo/filter tails ring down with no noise floor to hold them up. The C ABI
-//! calls [`ensure_flush_to_zero`] at the top of `te2_process` so any non-DAW
-//! host of the engine gets the same protection a DAW provides for free.
+//! Hosts are NOT guaranteed to set flush-to-zero on the thread that calls the
+//! plugin — the VST3 / CLAP / AU specs make no such promise, and a host may run
+//! `process` on worker threads whose control word was never set — and VCV
+//! Rack's bare engine thread certainly does not. So the engine cannot rely on
+//! the host. Every audio-thread entry point calls [`ensure_flush_to_zero`] once
+//! per callback: the plugin's `process` (also covering the standalone and the
+//! clap-wrapper AU), the offline render `main`, and the C ABI's `te2_process`
+//! (Rack). Cheap cross-platform insurance for x86 hosts and thread migration.
 
 /// Is flush-to-zero currently enabled on the calling thread?
 #[inline]

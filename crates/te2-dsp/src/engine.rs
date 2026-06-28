@@ -807,6 +807,63 @@ mod tests {
         }
     }
 
+    /// Soak guard for the "CPU rises over runtime" report: with flush-to-zero
+    /// established (as every shipping audio entry point now does), the per-block
+    /// cost of grinding a long, quiet, feedback-laden tail must not climb over
+    /// time. On x86 WITHOUT the guard this is exactly where denormal microcode
+    /// makes the late blocks crawl; the guard keeps them flat. Timing-based, so
+    /// `#[ignore]` by default (run explicitly / in the denormal-bench CI job),
+    /// and the threshold is deliberately generous to avoid flakiness.
+    #[test]
+    #[ignore = "timing-sensitive; run explicitly or in the denormal-bench CI job"]
+    fn cpu_cost_does_not_climb_on_a_quiet_tail() {
+        use std::time::Instant;
+        // Simulate the guarded audio thread.
+        crate::denormals::ensure_flush_to_zero();
+
+        let mut e = engine_48k();
+        e.set_params(&clinical(0.3, 0.85)); // heavy feedback => long ring-down
+
+        // Excite briefly, then go silent so the tail decays through the
+        // subnormal range under feedback.
+        for k in 0..4_800 {
+            let x = if k < 480 { 0.3 } else { 0.0 };
+            e.process(x, x);
+        }
+
+        // Measure per-block cost across many blocks of pure silence.
+        let block = 1_024usize;
+        let blocks = 240usize; // ~5 s at 48k
+        let mut times = Vec::with_capacity(blocks);
+        for _ in 0..blocks {
+            let t0 = Instant::now();
+            for _ in 0..block {
+                let (l, _r) = e.process(0.0, 0.0);
+                std::hint::black_box(l);
+            }
+            times.push(t0.elapsed().as_nanos() as f64 / block as f64);
+        }
+
+        // Median of the first eighth vs the last eighth. A genuine runtime
+        // cost-creep (denormals on x86, or any future accumulator) makes the
+        // tail blocks slower; flat means no creep.
+        let g = blocks / 8;
+        let median = |s: &[f64]| {
+            let mut v = s.to_vec();
+            v.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            v[v.len() / 2]
+        };
+        let first = median(&times[..g]);
+        let last = median(&times[blocks - g..]);
+        assert!(
+            last <= first * 3.0,
+            "per-block cost climbed over a quiet tail: first≈{first:.1}ns \
+             last≈{last:.1}ns (ratio {:.1}x) — flush-to-zero guard missing or a \
+             runtime accumulator regressed",
+            last / first
+        );
+    }
+
     #[test]
     fn echo_arrives_at_delay_time() {
         let mut e = engine_48k();

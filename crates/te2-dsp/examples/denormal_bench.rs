@@ -112,7 +112,9 @@ fn main() {
     run(OsFactor::X4, "4x");
     run(OsFactor::X8, "8x");
     println!(
-        "\n'denormal(Rack)' is the bare audio thread; 'denormal+fix' is FTZ on,\n\
-         which is what te2_process now guarantees and what every DAW already sets."
+        "\n'denormal(Rack)' is the bare audio thread (FTZ off); 'denormal+fix' is\n\
+         FTZ on, which every audio-thread entry point now guarantees per callback.\n\
+         A large off/on ratio = denormals are the cost (x86); ~1x = this CPU is\n\
+         unaffected by subnormals (Apple Silicon)."
     );
 }

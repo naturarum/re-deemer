@@ -1,0 +1,40 @@
+# x86 proof for the flush-to-zero / denormal fix.
+#
+# Neither maintainer has an x86 box (all Macs are Apple Silicon, where the
+# denormal penalty is ~1x). This job runs the engine's denormal benchmark on
+# x86 Linux + Windows runners, where subnormals DO cost 10-100x, to demonstrate
+# (a) the unguarded "FTZ off" penalty and (b) that flushing removes it. It also
+# runs the (normally-ignored) per-block soak test as an automated regression
+# guard. Manual-only — dispatch from the Actions tab.
+
+name: denormal-bench
+
+on:
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  bench:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            platform: linux-x86
+          - os: windows-latest
+            platform: windows-x86
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Rust toolchain
+        run: rustup toolchain install stable --profile minimal
+
+      # te2-dsp is pure DSP with zero framework deps, so no system libs needed.
+      - name: Denormal benchmark (FTZ off vs on)
+        run: cargo run -p te2-dsp --release --example denormal_bench
+
+      - name: CPU-over-time soak regression test
+        run: cargo test -p te2-dsp --release cpu_cost_does_not_climb_on_a_quiet_tail -- --ignored --nocapture

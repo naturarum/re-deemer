@@ -124,6 +124,14 @@ impl Plugin for SpaceCaseTe2 {
         _aux: &mut AuxiliaryBuffers,
         context: &mut impl ProcessContext<Self>,
     ) -> ProcessStatus {
+        // Subnormal floats in the engine's feedback/filter/J-A tails are ~free
+        // on Apple Silicon but 10-100x slower on x86, and hosts do NOT reliably
+        // set flush-to-zero on the audio thread (the VST3/CLAP/AU specs make no
+        // such promise, and a host may run process on worker threads). Guarantee
+        // it once per callback; this also covers the standalone and the
+        // clap-wrapper AU, which route through this same process().
+        te2_dsp::denormals::ensure_flush_to_zero();
+
         // Consume note events: notes select positions and gate the RES synth.
         // Only when the panel MIDI switch is on — otherwise a keyboard routed
         // to the track would yank the 1-8 positions around uninvited.

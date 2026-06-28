@@ -326,9 +326,10 @@ pub unsafe extern "C" fn te2_process(
     out_l: *mut f32,
     out_r: *mut f32,
 ) {
-    // DAW hosts set flush-to-zero on their audio threads; bare C-ABI hosts
-    // (VCV Rack's engine thread) do not, so the engine's IIR tails denormalize
-    // on quiet passages and the CPU spikes. Guarantee it here, cheaply.
+    // Hosts do not reliably set flush-to-zero on the audio thread, and bare
+    // C-ABI hosts (VCV Rack's engine thread) never do — so the engine's IIR
+    // tails denormalize on quiet passages and spike the CPU on x86. Guarantee
+    // it here, per frame, cheaply (steady-state cost is one control-reg read).
     te2_dsp::denormals::ensure_flush_to_zero();
     if let Some(h) = h.as_mut() {
         let (l, r) = h.engine.process(in_l, in_r);

@@ -10,6 +10,9 @@
 use te2_dsp::{EngineParams, Te2Engine};
 
 fn main() {
+    // Match the plugin's audio thread: flush subnormals so x86 render runs over
+    // long decaying tails don't crawl in denormal microcode.
+    te2_dsp::denormals::ensure_flush_to_zero();
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.first().map(String::as_str) {
         Some("render") if args.len() >= 3 => render(&args[1], &args[2], &args[3..]),
