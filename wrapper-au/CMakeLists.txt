@@ -13,7 +13,7 @@ cmake_minimum_required(VERSION 3.21)
 # Keep in lock-step with [workspace.package] version in ../Cargo.toml — the AU
 # component version integer is derived from PROJECT_VERSION below, and
 # package.sh aborts the release if it doesn't match the crate version.
-project(te2_au VERSION 1.1.0 LANGUAGES C CXX OBJC OBJCXX)
+project(te2_au VERSION 1.1.1 LANGUAGES C CXX OBJC OBJCXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "" FORCE)
@@ -28,7 +28,7 @@ target_add_auv2_wrapper(
     TARGET te2_as_auv2
     OUTPUT_NAME "RE-DEEMER"
     BUNDLE_IDENTIFIER "com.naturarum.re-deemer.auv2"
-    BUNDLE_VERSION "1.1.0"
+    BUNDLE_VERSION "1.1.1"
     # Music effect: audio effect that accepts MIDI (position select / gating).
     INSTRUMENT_TYPE "aumf"
     MANUFACTURER_NAME "naturarum"

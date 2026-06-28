@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.1.1 — 2026-06-28
+
+- **Lower CPU on quiet tails (Windows / Linux).** The audio thread now forces
+  flush-to-zero, so the echo and filter tails no longer fall into the slow
+  "denormal" floating-point range as they ring down — which on x86 hosts could
+  make CPU climb the longer a quiet passage ran. No audible change; macOS on
+  Apple Silicon was already unaffected.
+
 ## 1.1.0 — 2026-06-25
 
 - **Presets.** SETUP has a new PRESETS tab — name and save the current sound,

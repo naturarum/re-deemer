@@ -177,7 +177,7 @@
 
   <h1>RE<span class="dash">-</span>DEEMER</h1>
   <p class="tag">cassette tape echo · <em>the preorder, redeemed</em> · VST3 / CLAP / AU · macOS / Windows / Linux · free</p>
-  <a class="badge" href="#whats-new"><span class="dot"></span>what's new in <b id="badge-ver">v1.1.0</b> &nbsp;→</a>
+  <a class="badge" href="#whats-new"><span class="dot"></span>what's new in <b id="badge-ver">v1.1.1</b> &nbsp;→</a>
 
   <div class="hero"><img src="panel.png" alt="The RE-DEEMER panel: cassette window with live spools, VU meter, 21-fader position matrix, transport buttons"></div>
   <p class="hero-cap">THE SPOOLS ARE REAL: TAPE FOOTAGE WINDS LEFT TO RIGHT OVER A 30-MINUTE SIDE, AND REWIND WINDS IT BACK.</p>
@@ -248,6 +248,12 @@
 <section class="wrap" id="whats-new">
   <h2>What's new</h2>
   <div class="rel latest">
+    <h3>v1.1.1 <span class="when">June 2026</span></h3>
+    <ul>
+      <li><b>Lower CPU on quiet tails (Windows / Linux).</b> The audio thread now flushes denormals, so the echo and filter tails no longer slip into the slow floating-point range as they ring down. No audible change; macOS was already unaffected.</li>
+    </ul>
+  </div>
+  <div class="rel">
     <h3>v1.1.0 <span class="when">June 2026</span></h3>
     <ul>
       <li><b>Presets.</b> Save / load / delete your own sounds from the new SETUP → PRESETS tab.</li>
