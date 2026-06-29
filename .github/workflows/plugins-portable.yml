@@ -56,6 +56,9 @@ jobs:
         run: cargo xtask bundle te2-plugin --release
 
       - name: clap-validator
+        # Fail fast if validation hangs (e.g. a plugin background thread live at
+        # teardown) instead of burning a runner for hours.
+        timeout-minutes: 8
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}

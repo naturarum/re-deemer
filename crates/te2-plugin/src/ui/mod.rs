@@ -45,11 +45,14 @@ struct EditorState {
     /// 0..1 fade-in of the active overlay tab's body; reset to 0 on a tab switch
     /// so the new tab eases in instead of flashing.
     tab_fade: f32,
+    /// Seconds this editor session has been painting. The update check is
+    /// deferred until this passes a threshold, so host scans / validators that
+    /// create-and-destroy the editor without a sustained frame loop never spawn
+    /// the network thread (a live DLL thread hard-hangs plugin unload on Windows).
+    open_secs: f32,
 }
 
 pub fn create(params: Arc<Te2Params>, shared: Arc<UiShared>) -> Option<Box<dyn Editor>> {
-    // Best-effort, once-per-process check for a newer build on the website.
-    crate::update::spawn_once(shared.clone());
     create_egui_editor(
         params.editor_state.clone(),
         EditorState {
@@ -60,12 +63,24 @@ pub fn create(params: Arc<Te2Params>, shared: Arc<UiShared>) -> Option<Box<dyn E
             save_name: String::new(),
             current_label: None,
             tab_fade: 1.0,
+            open_secs: 0.0,
         },
         EguiSettings::default(),
         |_ctx, _queue, _state| {},
         move |ui, setter, _queue, state| {
             // The reels never stop turning.
             ui.ctx().request_repaint();
+            // Defer the update check until the editor has genuinely been open a
+            // moment. Host scans / validators create-and-destroy the editor
+            // without a sustained frame loop, so they never reach this — and a
+            // plugin must never leave a network thread live at unload (it
+            // hard-hangs the loader on Windows).
+            if state.open_secs <= 2.0 {
+                state.open_secs += ui.input(|i| i.stable_dt).min(0.1);
+                if state.open_secs > 2.0 {
+                    crate::update::spawn_once(shared.clone());
+                }
+            }
             draw_panel(ui, setter, &params, &shared, state);
         },
     )
@@ -109,6 +124,7 @@ pub fn draw_for_snapshot(
         save_name: String::new(),
         current_label: None,
         tab_fade: 1.0,
+        open_secs: 0.0,
     };
     draw_panel(ui, setter, params, shared, &mut state);
 }

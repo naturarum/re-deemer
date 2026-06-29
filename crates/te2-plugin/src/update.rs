@@ -80,7 +80,7 @@ fn run(shared: &UiShared) {
 fn fetch() -> Option<Manifest> {
     let resp = minreq::get(MANIFEST_URL)
         .with_header("User-Agent", concat!("RE-DEEMER/", env!("CARGO_PKG_VERSION")))
-        .with_timeout(8)
+        .with_timeout(5)
         .send()
         .ok()?;
     if resp.status_code != 200 {
