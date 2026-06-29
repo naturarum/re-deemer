@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.1.3 — 2026-06-29
+
+- **Windows: the update check no longer affects plugin scanning.** The 1.1.2
+  check started its background network thread the moment the editor opened,
+  which could hang plugin scanning/validation on Windows (a live thread at
+  plugin unload). It now waits until the editor has been open a couple of
+  seconds, so scans and validators that briefly open the UI never trigger it.
+  macOS and Linux were unaffected.
+
 ## 1.1.2 — 2026-06-28
 
 - **Update notifier.** A small red dot by the SETUP button — and a
