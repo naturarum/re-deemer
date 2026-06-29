@@ -95,7 +95,6 @@
   .btn-tip:hover { box-shadow: 0 0 18px rgba(233, 223, 192, .14); }
   .relmeta { text-align: center; color: var(--ink-dim); font-size: 12px; letter-spacing: 1px; margin-bottom: 8px; }
   .relmeta b { color: var(--cream); font-weight: normal; }
-  #dlcount { margin-bottom: 22px; }
   .free { text-align: center; color: var(--ink-dim); font-size: 13px; max-width: 560px; margin: 0 auto 40px; }
 
   /* .wrap (a class) outranks the bare `section` selector, so vertical padding
@@ -189,7 +188,6 @@
     <a class="btn btn-tip" href="https://paypal.me/naturarerum">♥&nbsp;&nbsp;TIP JAR</a>
   </div>
   <p class="relmeta"><b id="rel-tag">latest release</b> · free · macOS notarized &amp; universal · Windows/Linux fresh out of the lab</p>
-  <p class="relmeta" id="dlcount"></p>
   <p class="free">RE-DEEMER is free, forever. People waited years for this machine — they deserve to get it for nothing. If it earns a place in your music, the tip jar keeps the tape rolling.</p>
 </header>
 
@@ -310,27 +308,6 @@
       wire("dl-mac", /RE-DEEMER-\d[\d.]*-macos\.zip/);
       wire("dl-win", /RE-DEEMER-\d[\d.]*-windows\.zip/);
       wire("dl-lin", /RE-DEEMER-\d[\d.]*-linux\.zip/);
-    })
-    .catch(() => {});
-
-  // Live per-platform download totals, summed across every release and both
-  // the versioned and stable asset names.
-  fetch("https://api.github.com/repos/naturarum/re-deemer/releases?per_page=100")
-    .then(r => r.json())
-    .then(rels => {
-      const sum = { macos: 0, windows: 0, linux: 0 };
-      (Array.isArray(rels) ? rels : []).forEach(rel =>
-        (rel.assets || []).forEach(a => {
-          const n = a.name.toLowerCase();
-          if (n.includes("macos")) sum.macos += a.download_count;
-          else if (n.includes("windows")) sum.windows += a.download_count;
-          else if (n.includes("linux")) sum.linux += a.download_count;
-        }));
-      const total = sum.macos + sum.windows + sum.linux;
-      const el = document.getElementById("dlcount");
-      if (el && total)
-        el.innerHTML = "⬇ <b>" + total + "</b> downloads · macOS " +
-          sum.macos + " · Windows " + sum.windows + " · Linux " + sum.linux;
     })
     .catch(() => {});
 </script>
