@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.1.2 — 2026-06-28
+
+- **Update notifier.** A small red dot by the SETUP button — and a
+  "vX.Y.Z available →" link inside SETUP — lights up when a newer version is on
+  the website. The plugin checks about once a day in the background; click the
+  link to go and download. No pop-ups, nothing to configure.
+
 ## 1.1.1 — 2026-06-28
 
 - **Lower CPU on quiet tails (Windows / Linux).** The audio thread now forces

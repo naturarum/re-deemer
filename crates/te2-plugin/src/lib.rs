@@ -3,10 +3,11 @@
 mod params;
 pub mod presets;
 pub mod ui;
+mod update;
 
 use nice_plug::prelude::*;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use te2_dsp::{EngineParams, Te2Engine};
 
 pub use params::Te2Params;
@@ -23,6 +24,11 @@ pub struct UiShared {
     pub eject: AtomicBool,
     /// A 1-8 panel button is held (RES gate).
     pub ui_gate: AtomicBool,
+    /// A newer version is on the website (set by the background update check;
+    /// read by the editor for the faceplate nudge + the SETUP line).
+    pub update_available: AtomicBool,
+    /// (latest version, download URL) when an update is available.
+    pub update_info: Mutex<Option<(String, String)>>,
 }
 
 impl Default for UiShared {
@@ -34,6 +40,8 @@ impl Default for UiShared {
             footage: AtomicF32::new(0.0),
             eject: AtomicBool::new(false),
             ui_gate: AtomicBool::new(false),
+            update_available: AtomicBool::new(false),
+            update_info: Mutex::new(None),
         }
     }
 }

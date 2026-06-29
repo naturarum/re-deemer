@@ -10,6 +10,13 @@ cd "$(dirname "$0")/.."
 VERSION=$(grep -m1 '^version' Cargo.toml | sed 's/.*"\(.*\)"/\1/')
 echo "== RE-DEEMER v${VERSION} =="
 
+# Keep the in-plugin update manifest in lockstep with this build's version, so
+# the notifier points users at the latest release. Regenerated from VERSION on
+# every package run — no manual edit, and it ships in the release commit.
+printf '{\n  "latest": "%s",\n  "url": "https://naturarum.github.io/re-deemer/"\n}\n' \
+    "$VERSION" > docs/version.json
+echo "== update manifest -> docs/version.json (latest ${VERSION}) =="
+
 echo "== tests =="
 cargo test --workspace --release --quiet
 

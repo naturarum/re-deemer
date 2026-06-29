@@ -48,6 +48,8 @@ struct EditorState {
 }
 
 pub fn create(params: Arc<Te2Params>, shared: Arc<UiShared>) -> Option<Box<dyn Editor>> {
+    // Best-effort, once-per-process check for a newer build on the website.
+    crate::update::spawn_once(shared.clone());
     create_egui_editor(
         params.editor_state.clone(),
         EditorState {
@@ -67,6 +69,18 @@ pub fn create(params: Arc<Te2Params>, shared: Arc<UiShared>) -> Option<Box<dyn E
             draw_panel(ui, setter, &params, &shared, state);
         },
     )
+}
+
+/// A red "new version available" glow dot that slowly pulses on and off. Used
+/// as the faceplate nudge and beside the SETUP-overlay message.
+fn update_dot(painter: &egui::Painter, center: egui::Pos2, time: f64) {
+    let pulse = (0.5 + 0.5 * (time * 2.0).sin()) as f32;
+    painter.circle_filled(
+        center,
+        5.5 + 2.0 * pulse,
+        theme::LED_RED.gamma_multiply(0.15 + 0.20 * pulse),
+    );
+    painter.circle_filled(center, 3.0, theme::LED_RED.gamma_multiply(0.70 + 0.30 * pulse));
 }
 
 /// Render one frame of the panel for offline snapshots (dev tooling).
@@ -746,6 +760,11 @@ fn draw_panel_inner(
             state.user_presets = crate::presets::list_user();
         }
     }
+    // New-version nudge: a slow red pulse by the SETUP button when the website
+    // is carrying a newer build. The details live inside SETUP itself.
+    if shared.update_available.load(Ordering::Relaxed) {
+        update_dot(ui.painter(), pos2(1020.0, 134.0), ui.input(|i| i.time));
+    }
 
     // The machine cluster drops a touch below the bank's knob rows (ay/by) so
     // the anomaly group isn't jammed against the fader matrix above.
@@ -980,6 +999,35 @@ fn draw_overlay(
             }
             if x_resp.clicked() {
                 close = true;
+            }
+
+            // Non-modal "update available" line in the header band, drawn before
+            // the per-tab fade so it stays solid on both tabs. Click to open the
+            // download page.
+            if shared.update_available.load(Ordering::Relaxed) {
+                if let Some((ver, url)) = shared.update_info.lock().ok().and_then(|g| (*g).clone()) {
+                    let t = ui.input(|i| i.time);
+                    let label = format!("v{ver} available  \u{2192}");
+                    let text_x = 706.0;
+                    let w = label.chars().count() as f32 * 6.6;
+                    let hit = Rect::from_min_max(pos2(686.0, 83.0), pos2(text_x + w + 4.0, 105.0));
+                    let resp = ui.allocate_rect(hit, Sense::click());
+                    let color = if resp.hovered() { theme::INK } else { theme::INK_DIM };
+                    {
+                        let p = ui.painter();
+                        update_dot(p, pos2(694.0, 94.0), t);
+                        p.text(
+                            pos2(text_x, 94.0),
+                            Align2::LEFT_CENTER,
+                            &label,
+                            FontId::monospace(11.0),
+                            color,
+                        );
+                    }
+                    if resp.clicked() {
+                        ui.ctx().open_url(egui::OpenUrl::new_tab(url));
+                    }
+                }
             }
 
             // Body fades in on a tab switch; the card and tabs above stay solid.

@@ -31,6 +31,9 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # Must match the egui version used by nice-plug-egui.
 egui = "0.34.1"
+# Tiny blocking HTTPS client for the once-a-day update check (background
+# thread only). rustls + bundled roots — no system TLS / OpenSSL on any OS.
+minreq = { version = "2", default-features = false, features = ["https-rustls"] }
 # Dev tooling: headless UI snapshots.
 egui_kittest = { version = "0.34", features = ["wgpu", "snapshot"], optional = true }
 image = { version = "0.25", default-features = false, features = ["png"], optional = true }

@@ -45,7 +45,9 @@ Everything from a clean checkout to a published, notarized release.
 # 1. bump version in Cargo.toml ([workspace.package]) AND in
 #    wrapper-au/CMakeLists.txt (project VERSION + BUNDLE_VERSION — these feed the
 #    AU component version, and package.sh aborts if they disagree with the crate
-#    version). Add a CHANGELOG entry.
+#    version). Add a CHANGELOG entry. (docs/version.json — the manifest the
+#    in-plugin update notifier polls — is regenerated from the version by
+#    package.sh in step 2, so there's nothing to edit there.)
 # 2. build, test, package:
 ./scripts/package.sh
 

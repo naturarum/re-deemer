@@ -54,6 +54,17 @@ fn main() {
             .footage
             .store(f, std::sync::atomic::Ordering::Relaxed);
     }
+    // Preview the "update available" nudge (faceplate dot + SETUP line) without
+    // a real newer release: pass `update` (optionally with `overlay`).
+    if std::env::args().any(|a| a == "update") {
+        shared
+            .update_available
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+        *shared.update_info.lock().unwrap() = Some((
+            "1.1.2".to_string(),
+            "https://naturarum.github.io/re-deemer/".to_string(),
+        ));
+    }
 
     let mut harness = egui_kittest::Harness::builder()
         .with_size(egui::vec2(1080.0, 560.0))
