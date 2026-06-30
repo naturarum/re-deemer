@@ -468,6 +468,17 @@ impl Te2Engine {
         self.motor.set_kill_ramp(down_seconds, up_seconds);
     }
 
+    /// Dev/tuning only: override the LPF resonance low-end compensation on both
+    /// channels (see `OtaLowpass`). Not wired to any parameter, ABI, or UI — the
+    /// production value is the filter's built-in default. Used by the offline
+    /// render harness to A/B candidate amounts by ear.
+    #[doc(hidden)]
+    pub fn set_res_comp(&mut self, comp: f32) {
+        for ch in 0..2 {
+            self.ota_lp[ch].set_comp(comp);
+        }
+    }
+
     fn apply_params(&mut self) {
         let p = &self.params;
         self.motor
@@ -805,6 +816,50 @@ mod tests {
             res: 0.0,
             ..Default::default()
         }
+    }
+
+    /// The LPF resonance compensation must restore low-frequency energy in the
+    /// FEEDBACK LOOP (not just a direct signal). At moderate resonance a
+    /// regenerating echo should carry more lows with compensation than without.
+    #[test]
+    fn res_comp_restores_feedback_low_end() {
+        let low_band = |comp: f32| -> f64 {
+            let mut e = engine_48k();
+            let mut p = clinical(0.45, 0.85);
+            p.lpf_hz = 1800.0;
+            p.res = 0.45;
+            e.set_params(&p);
+            e.set_res_comp(comp);
+            for _ in 0..48_000 {
+                e.process(0.0, 0.0); // settle motor + tape
+            }
+            let mut rng = 0x1234_5678u32;
+            let g = (-2.0 * std::f64::consts::PI * 150.0 / 48_000.0).exp();
+            let (mut lp, mut s) = (0.0f64, 0.0f64);
+            let n = 48_000 * 3;
+            for k in 0..n {
+                let pluck = if k % 24_000 < 480 {
+                    rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
+                    ((rng >> 9) as f32 / (1 << 23) as f32 - 1.0) * 0.5
+                } else {
+                    0.0
+                };
+                let (l, _) = e.process(pluck, pluck);
+                lp = (1.0 - g) * l as f64 + g * lp;
+                s += lp * lp;
+            }
+            (s / n as f64).sqrt()
+        };
+        let bare = low_band(0.0);
+        let comped = low_band(0.6);
+        eprintln!(
+            "ENGINE feedback low-band: bare={bare:.6} comped={comped:.6} ratio={:.2}",
+            comped / bare
+        );
+        assert!(
+            comped > bare * 1.3,
+            "comp should restore feedback lows: bare={bare:.6} comped={comped:.6}"
+        );
     }
 
     /// Soak guard for the "CPU rises over runtime" report: with flush-to-zero

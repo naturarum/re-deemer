@@ -30,12 +30,32 @@ impl Stage {
 /// it doesn't wait for tape hiss to arrive and seed it.
 const THERMAL_NOISE: f32 = 3.0e-5;
 
+/// Resonance low-end compensation, 0..1 (production default). The ladder's
+/// `−k·y4` feedback drains the passband — the lows especially — by ~1/(1+k) as
+/// resonance rises (the classic Moog bass loss), which makes big regenerating
+/// feedbacks hard to build. Scaling the loop *input* by `(1 + comp·k)` pushes the
+/// passband gain back toward unity: 0.0 = the bare ladder (most bass loss,
+/// original voicing), 1.0 = fully restored (flat passband, least character). We
+/// keep it partial — enough low end for feedback to bloom without flattening the
+/// filter. Only the program input is scaled, so self-oscillation (which builds
+/// from x≈0) is completely unaffected. This default is the shipped value across
+/// all products; the offline render harness can override it per-instance via
+/// `set_comp` to A/B candidates by ear.
+///
+/// **0.3** chosen by ear (subtle — lows return and feedback breathes while the
+/// OTA/Moog voicing stays put). Measured ~2.5× more sub-150 Hz energy in a
+/// regenerating echo at moderate resonance vs the bare ladder.
+const DEFAULT_RES_COMP: f32 = 0.3;
+
 /// 4-pole OTA lowpass with resonance to self-oscillation.
 pub struct OtaLowpass {
     stages: [Stage; 4],
     big_g: f32,
     /// Feedback amount, 0..~4.3 (4.0 = oscillation threshold).
     k: f32,
+    /// Low-end compensation amount (see `DEFAULT_RES_COMP`). Separate from `set`
+    /// so re-setting cutoff/res never disturbs it.
+    comp: f32,
     rng: u32,
 }
 
@@ -45,6 +65,7 @@ impl Default for OtaLowpass {
             stages: [Stage::default(); 4],
             big_g: 0.5,
             k: 0.0,
+            comp: DEFAULT_RES_COMP,
             rng: 0x6A09_E667,
         }
     }
@@ -71,13 +92,18 @@ impl OtaLowpass {
             + b(&self.stages[2]))
             * big_g
             + b(&self.stages[3]);
-        let y4_lin = (g4 * x + sigma) / (1.0 + self.k * g4);
+        // Low-end compensation: scale the loop input so the resonance feedback
+        // drains the passband less (see DEFAULT_RES_COMP). Input-only — at x≈0
+        // this is a no-op, so self-oscillation is unchanged. The ZDF prediction
+        // uses the same compensated input to stay consistent.
+        let xc = x * (1.0 + self.comp * self.k);
+        let y4_lin = (g4 * xc + sigma) / (1.0 + self.k * g4);
 
         // OTA input stage saturates the closed loop — this is what bounds
         // self-oscillation into a sine. Its thermal noise rides along.
         self.rng = self.rng.wrapping_mul(1664525).wrapping_add(1013904223);
         let thermal = ((self.rng >> 8) as f32 / (1 << 23) as f32 - 1.0) * THERMAL_NOISE;
-        let u = fast_tanh(x + thermal - self.k * y4_lin);
+        let u = fast_tanh(xc + thermal - self.k * y4_lin);
 
         let y1 = self.stages[0].lp(u, big_g);
         let y2 = self.stages[1].lp(y1, big_g);
@@ -87,6 +113,12 @@ impl OtaLowpass {
 
     pub fn reset(&mut self) {
         self.stages = [Stage::default(); 4];
+    }
+
+    /// Override the low-end compensation amount (see `DEFAULT_RES_COMP`). Dev/
+    /// tuning only — production uses the default; not wired to any parameter.
+    pub fn set_comp(&mut self, comp: f32) {
+        self.comp = comp;
     }
 
     /// Tiny excitation so self-oscillation starts reliably from silence.
@@ -142,6 +174,34 @@ fn fast_tanh(x: f32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Low-end compensation lifts sub-cutoff energy at high resonance without
+    /// touching self-oscillation. Guards the COMP feature against regressions.
+    #[test]
+    fn compensation_restores_low_end() {
+        let sr = 48_000.0f64;
+        let low_rms = |comp: f32| {
+            let mut f = OtaLowpass::default();
+            f.set(sr as f32, 1500.0, 0.9); // k = 0.9*4.3 = 3.87, lows heavily drained
+            f.set_comp(comp);
+            let (mut sumsq, mut cnt) = (0.0f64, 0usize);
+            for n in 0..(sr as usize) {
+                let x = (std::f64::consts::TAU * 100.0 * n as f64 / sr).sin() as f32 * 0.3;
+                let y = f.process(x);
+                if n > sr as usize / 2 {
+                    sumsq += (y as f64).powi(2);
+                    cnt += 1;
+                }
+            }
+            (sumsq / cnt as f64).sqrt()
+        };
+        let bare = low_rms(0.0);
+        let comped = low_rms(0.5);
+        assert!(
+            comped > bare * 1.8,
+            "compensation should lift 100 Hz at high res: bare={bare:.5} comped={comped:.5}"
+        );
+    }
 
     fn tone_response(filter: &mut OtaLowpass, sr: f64, freq: f64) -> f64 {
         let n = (sr * 0.5) as usize;

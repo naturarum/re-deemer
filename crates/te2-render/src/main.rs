@@ -55,6 +55,13 @@ fn render(input: &str, output: &str, flags: &[String]) {
         ..Default::default()
     });
 
+    // Dev/tuning: override the filter's low-end resonance compensation to A/B
+    // candidate amounts by ear. Negative (default) leaves the built-in value.
+    let res_comp = flag(flags, "--res-comp", -1.0);
+    if res_comp >= 0.0 {
+        engine.set_res_comp(res_comp);
+    }
+
     let samples: Vec<f32> = match spec.sample_format {
         hound::SampleFormat::Float => reader.samples::<f32>().map(|s| s.unwrap()).collect(),
         hound::SampleFormat::Int => {

@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.1.4 — 2026-06-30
+
+- **Resonance keeps more low end.** Turning up the filter's resonance used to
+  thin out the lows in the feedback — the classic ladder-filter bass loss — so
+  it was hard to build big, full repeats once you had any resonance dialled in.
+  The low-pass now holds onto more of the low end as resonance climbs, so
+  feedback blooms stay fuller and you can lean on resonance and feedback
+  together. The filter's character and its self-oscillation are unchanged — a
+  subtle change, just a more useful one.
+
 ## 1.1.3 — 2026-06-29
 
 - **Windows: the update check no longer affects plugin scanning.** The 1.1.2
